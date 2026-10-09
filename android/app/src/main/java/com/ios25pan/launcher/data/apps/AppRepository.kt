@@ -12,6 +12,7 @@ import android.os.Build
 import android.provider.AlarmClock
 import android.provider.MediaStore
 import android.provider.Settings
+import android.util.Log
 import android.util.LruCache
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -43,9 +44,23 @@ class AppRepository @Inject constructor(
     private val ownPackage = context.packageName
     private val iconCache = LruCache<String, ImageBitmap>(160)
 
+    /**
+     * 全机应用快照。
+     *
+     * 这里必须做隔离：设备上只要有一个 App 的信息有问题（`loadLabel` 触发
+     * BadParcelableException、`queryIntentActivities` 抛异常等等），
+     * 不隔离就会让整条 Flow 失败、进而崩掉 ViewModel 的协程 —— 表现就是"进了桌面才闪退"。
+     * 个别应用拿不到就跳过它，不要连累整个桌面。
+     */
     suspend fun snapshot(): AppSnapshot = withContext(Dispatchers.IO) {
-        val apps = launchableApps()
-        val roles = ROLES.associateWith { resolveRole(it)?.flattenToString() }
+        val apps = runCatching { launchableApps() }
+            .onFailure { Log.w(TAG, "读取应用列表失败", it) }
+            .getOrDefault(emptyList())
+        val roles = ROLES.associateWith { role ->
+            runCatching { resolveRole(role)?.flattenToString() }
+                .onFailure { Log.w(TAG, "解析角色失败: $role", it) }
+                .getOrNull()
+        }
         AppSnapshot(apps, roles)
     }
 
@@ -72,9 +87,12 @@ class AppRepository @Inject constructor(
     suspend fun icon(flat: String): ImageBitmap? {
         iconCache.get(flat)?.let { return it }
         return withContext(Dispatchers.IO) {
-            val cn = ComponentName.unflattenFromString(flat) ?: return@withContext null
-            val drawable = runCatching { pm.getActivityIcon(cn) }.getOrNull() ?: return@withContext null
-            drawable.toBitmap(128, 128).asImageBitmap().also { iconCache.put(flat, it) }
+            // 整段包起来：某些 App 的图标是畸形 drawable，绘制时会抛异常
+            runCatching {
+                val cn = ComponentName.unflattenFromString(flat) ?: return@runCatching null
+                val drawable = pm.getActivityIcon(cn)
+                drawable.toBitmap(ICON_SIZE, ICON_SIZE).asImageBitmap().also { iconCache.put(flat, it) }
+            }.onFailure { Log.w(TAG, "加载图标失败: $flat", it) }.getOrNull()
         }
     }
 
@@ -110,13 +128,15 @@ class AppRepository @Inject constructor(
         return queryActivities(intent)
             .asSequence()
             .filter { it.activityInfo.packageName != ownPackage }
-            .map { ri ->
-                val ai = ri.activityInfo
-                LaunchableApp(
-                    component = ComponentName(ai.packageName, ai.name).flattenToString(),
-                    label = ri.loadLabel(pm).toString(),
-                    packageName = ai.packageName,
-                )
+            .mapNotNull { ri ->
+                runCatching {
+                    val ai = ri.activityInfo
+                    LaunchableApp(
+                        component = ComponentName(ai.packageName, ai.name).flattenToString(),
+                        label = ri.loadLabel(pm).toString(),
+                        packageName = ai.packageName,
+                    )
+                }.onFailure { Log.w(TAG, "跳过异常应用: ${ri.activityInfo?.packageName}", it) }.getOrNull()
             }
             .distinctBy { it.component }
             .toList()
@@ -138,6 +158,9 @@ class AppRepository @Inject constructor(
         }
 
     companion object {
+        private const val TAG = "AppRepository"
+        private const val ICON_SIZE = 128
+
         /** 与 desktop_seed.json 中 action 的 role:xxx 一一对应。 */
         val ROLES = listOf(
             "phone", "camera", "music", "settings", "gallery", "mail", "calendar", "maps",

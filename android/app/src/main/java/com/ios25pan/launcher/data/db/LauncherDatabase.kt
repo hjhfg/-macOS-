@@ -3,6 +3,7 @@ package com.ios25pan.launcher.data.db
 import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import android.util.Log
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -26,8 +27,17 @@ abstract class LauncherDatabase : RoomDatabase() {
  * 写入 desktop_items。之后布局只由用户操作修改。
  */
 private class SeedCallback(private val context: Context) : RoomDatabase.Callback() {
+
+    private companion object {
+        const val TAG = "LauncherDatabase"
+    }
     override fun onCreate(db: SupportSQLiteDatabase) {
         super.onCreate(db)
+        // 种子数据写不进去也要让应用能起来（只是桌面是空的），不能把启动器搞崩
+        runCatching { seed(db) }.onFailure { Log.e(TAG, "写入初始布局失败", it) }
+    }
+
+    private fun seed(db: SupportSQLiteDatabase) {
         val raw = context.assets.open("desktop_seed.json").bufferedReader().use { it.readText() }
         val items = JSONObject(raw).getJSONArray("items")
         db.beginTransaction()

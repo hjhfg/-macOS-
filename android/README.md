@@ -236,6 +236,42 @@ python3 tools/convert_web_to_android.py ../ios.25pan.com.zip
 自由旋转（`rotation` 字段已在表里，UI 未开放）、真正的自由窗口、备份还原、动态壁纸
 （视频壁纸在启动器上代价太高）。
 
+## 崩溃排查
+
+启动器崩了会直接回不了桌面，所以崩溃栈会自动落盘到
+
+```
+/sdcard/Android/data/com.ios25pan.launcher/files/crash.log
+```
+
+这是应用专属目录，不需要 root、不需要 adb，用任意文件管理器（或把手机连电脑）就能打开。
+**控制中心 → 「崩溃日志」** 里也能直接查看和复制。logcat 里同样会打完整堆栈（tag `LauncherCrash`）。
+
+抓 logcat：
+
+```bash
+adb logcat -c && adb logcat | grep -E "LauncherCrash|AndroidRuntime|FATAL"
+```
+
+### 已经做过的加固
+
+- **单包异常隔离**：设备上只要有一个 App 信息异常（`loadLabel` 抛 BadParcelableException 等），
+  以前会让整条 Flow 失败、进而崩掉 ViewModel 协程 —— 现象就是"进了桌面才闪退"。
+  现在逐个 `runCatching` 跳过，桌面照常起来。
+- **图标解码隔离**：畸形图标 drawable 绘制时抛异常，同样被拦住。
+- **建库失败不再致命**：种子数据写入失败只记日志，桌面空着也能起来。
+- **Flow 兜底**：上游异常重试 3 次，仍失败则记日志而不是让协程崩掉。
+
+### 如果崩在毛玻璃上
+
+Haze 会把 `RenderEffect.createBlurEffect` 的 `IllegalArgumentException` **原样抛出**
+（信息类似 "this device does not support a blur radius of Xdp"），而玻璃第一帧就开始画，
+等于一进桌面就崩。Cupertino / Haze 的材质预设写死 24dp，本项目在 `ui/Glass.kt` 里覆盖成了更保守的值：
+
+```kotlin
+private val BLUR_RADIUS = 16.dp   // 继续报错就往下调；调到 0.dp 退化成纯半透明，不会崩
+```
+
 ## 工具链
 
 因为 Haze 1.7.3 是用 Kotlin 2.3.20 / Compose 1.12.0 编译出来的，本项目把工具链整个对齐到了它自己的

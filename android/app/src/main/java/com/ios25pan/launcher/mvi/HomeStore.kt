@@ -2,6 +2,7 @@ package com.ios25pan.launcher.mvi
 
 import android.content.ComponentName
 import android.content.Context
+import android.util.Log
 import android.view.View
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -25,7 +26,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -69,6 +72,10 @@ class HomeStore @Inject constructor(
                 .flowOn(Dispatchers.IO)
                 // 包变化不一定真的改变桌面，别为了同样的结果重组一遍
                 .distinctUntilChanged()
+                // 上游偶发失败（PackageManager 事务异常等）重试几次，
+                // 实在不行就记日志收尾 —— 绝不让异常冒到协程外面把应用搞崩
+                .retry(3) { it !is kotlinx.coroutines.CancellationException }
+                .catch { Log.e(TAG, "构建桌面失败", it) }
                 .collect { dispatch(HomeIntent.Loaded(it)) }
         }
     }
@@ -167,6 +174,8 @@ class HomeStore @Inject constructor(
     fun widgetView(context: Context, appWidgetId: Int): View? = widgets.hostView(context, appWidgetId)
 
     private companion object {
+        private const val TAG = "HomeStore"
+
         /** 包变化广播去抖：安装/更新会连发多条，且每次都要全量查 PackageManager。 */
         const val PACKAGE_DEBOUNCE_MS = 400L
     }

@@ -34,10 +34,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +50,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ios25pan.launcher.R
 import com.ios25pan.launcher.ui.util.findActivity
+import com.ios25pan.launcher.util.CrashHandler
 import dev.chrisbanes.haze.HazeState
 
 /**
@@ -77,6 +80,13 @@ fun ControlCenter(
     var music by remember { mutableFloatStateOf(streamRatio(audio, AudioManager.STREAM_MUSIC)) }
     var ring by remember { mutableFloatStateOf(streamRatio(audio, AudioManager.STREAM_RING)) }
     var alarm by remember { mutableFloatStateOf(streamRatio(audio, AudioManager.STREAM_ALARM)) }
+    // 只在控制中心进入组合时读一次：拖动滑块会频繁重组，不能每次都去读文件
+    val hasCrashLog = remember { CrashHandler.lastCrash() != null }
+    var showCrashLog by remember { mutableStateOf(false) }
+
+    if (showCrashLog) {
+        CrashLogDialog(onDismiss = { showCrashLog = false })
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         // 遮罩与面板分别动画：遮罩只淡入淡出，面板从顶部滑下来
@@ -112,6 +122,15 @@ fun ControlCenter(
                             color = OnGlass,
                         )
                         Spacer(Modifier.weight(1f))
+                        if (hasCrashLog) {
+                            TextButton(onClick = { showCrashLog = true }) {
+                                Text(
+                                    stringResource(R.string.crash_log_entry),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = OnGlass,
+                                )
+                            }
+                        }
                         IconButton(onClick = onClose) {
                             Icon(Icons.Default.Close, contentDescription = null)
                         }

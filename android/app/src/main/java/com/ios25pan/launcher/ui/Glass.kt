@@ -7,6 +7,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.ExperimentalHazeApi
 import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.HazeState
@@ -32,23 +33,39 @@ import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
  */
 private const val INPUT_SCALE = 0.8f
 
+/**
+ * 模糊半径（dp）。
+ *
+ * Cupertino / Haze 的材质预设都写死 24dp，这里刻意调小：
+ * `RenderEffect.createBlurEffect` 在部分设备（尤其是老一些的 GPU/驱动）上
+ * 会为大半径抛 `IllegalArgumentException`，而 Haze 会把这个异常原样抛出来
+ * —— 而这东西第一帧就开始画，等于一进桌面就崩。
+ *
+ * 如果还报 "device does not support a blur radius of Xdp"，继续往下调；
+ * 调到 0.dp 就退化成纯半透明材质（有玻璃感、没有模糊），不会崩。
+ */
+private val BLUR_RADIUS = 16.dp
+
+@OptIn(ExperimentalHazeMaterialsApi::class)
+private fun withSafeBlur(style: HazeStyle): HazeStyle = style.copy(blurRadius = BLUR_RADIUS)
+
 /** Dock：常驻、面积小，用薄材质让壁纸透出来。 */
 @OptIn(ExperimentalHazeMaterialsApi::class)
 @Composable
 @ReadOnlyComposable
-fun dockGlass(): HazeStyle = CupertinoMaterials.thin()
+fun dockGlass(): HazeStyle = withSafeBlur(CupertinoMaterials.thin())
 
 /** 文件夹卡片：比 Dock 厚一档，压得住里面的文字。 */
 @OptIn(ExperimentalHazeMaterialsApi::class)
 @Composable
 @ReadOnlyComposable
-fun cardGlass(): HazeStyle = CupertinoMaterials.regular()
+fun cardGlass(): HazeStyle = withSafeBlur(CupertinoMaterials.regular())
 
 /** 控制中心 / 小组件选择器：整块面板，用厚材质保证可读性。 */
 @OptIn(ExperimentalHazeMaterialsApi::class)
 @Composable
 @ReadOnlyComposable
-fun panelGlass(): HazeStyle = CupertinoMaterials.thick()
+fun panelGlass(): HazeStyle = withSafeBlur(CupertinoMaterials.thick())
 
 /**
  * 把一块区域变成玻璃：圆角裁剪 + Haze 模糊 + 降采样。
