@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">iOS 桌面</string>
+    <string name="app_not_installed">未找到对应应用，请先安装</string>
+    <string name="folder_default_name">文件夹</string>
+    <string name="edit_done">完成</string>
+    <string name="add_widget">添加小组件</string>
+    <string name="control_center">控制中心</string>
+    <string name="widget_no_providers">没有可用的小组件</string>
+    <string name="widget_bind_denied">系统拒绝了小组件绑定</string>
+    <string name="toggle_network">网络</string>
+    <string name="toggle_bluetooth">蓝牙</string>
+    <string name="toggle_nfc">NFC</string>
+    <string name="volume_title">音量</string>
+    <string name="brightness">亮度</string>
+    <string name="volume_music">媒体</string>
+    <string name="volume_ring">铃声</string>
+    <string name="volume_alarm">闹钟</string>
+    <string name="remove_item">移除</string>
+</resources>
