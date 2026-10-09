@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -26,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.ios25pan.launcher.domain.DesktopItem
 import com.ios25pan.launcher.mvi.HomeStore
+import dev.chrisbanes.haze.HazeState
 
 private const val FOLDER_COLUMNS = 3
 
@@ -38,6 +38,7 @@ private const val FOLDER_COLUMNS = 3
 @Composable
 fun FolderOverlay(
     visible: Boolean,
+    hazeState: HazeState,
     items: List<DesktopItem>,
     title: String,
     store: HomeStore,
@@ -61,16 +62,16 @@ fun FolderOverlay(
             exit = scaleOut(animationSpec = Motion.panelScale, targetScale = 0.9f) + fadeOut(),
             modifier = Modifier.align(Alignment.Center),
         ) {
-            Surface(
-                shape = RoundedCornerShape(28.dp),
-                color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.fillMaxWidth(0.82f),
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.82f)
+                    .launcherGlass(hazeState, RoundedCornerShape(28.dp), cardGlass()),
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = OnGlass,
                         modifier = Modifier.align(Alignment.CenterHorizontally),
                     )
                     Spacer(Modifier.size(16.dp))
@@ -90,7 +91,7 @@ fun FolderOverlay(
                                         Text(
                                             text = item.title,
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface,
+                                            color = OnGlass,
                                             maxLines = 1,
                                         )
                                     }

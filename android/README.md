@@ -54,6 +54,8 @@ android/
     │   └── LaunchItemUseCase.kt
     ├── mvi/                          # HomeIntent / HomeState / HomeEffect / HomeStore
     └── ui/                           # Compose：桌面页、Dock、文件夹、控制中心
+        ├── Glass.kt                  # 玻璃材质统一入口（材质选择 + 降采样 + clip 顺序）
+        └── Motion.kt                 # 动效规格
 ```
 
 数据流是单向的：
@@ -63,6 +65,62 @@ Compose UI  ──Intent──▶  HomeStore.reduce()  ──▶ State ──▶
                               │
                               └─▶ perform()：IO / 启动 Activity / 系统服务 ──▶ Effect
 ```
+
+## 玻璃质感（Haze）
+
+用 [Haze](https://github.com/chrisbanes/haze) 做毛玻璃。选它的理由：Compose 生态里事实上的标准，
+作者是 Chris Banes（Compose 团队成员之一），持续维护；而且它的 `haze-materials` 模块直接提供了
+**`CupertinoMaterials`** —— 数值取自 Apple 官方发布的 iOS 18 Figma，做仿 macOS 的桌面时
+不需要自己调透明度和模糊半径，直接用 `thin / regular / thick` 几档即可。
+
+### 为什么是 1.7.3 而不是最新的 2.0.1
+
+Haze 2.0（2026-09 发布）新增了 `haze-glass` 折射玻璃模块，效果更好，但**用不了**：
+
+| | 需要的 Kotlin | 配套 KSP |
+|---|---|---|
+| Haze 2.0.1 | 2.4.20 | **不存在** |
+| Haze 1.7.3 | 2.3.20 | 2.3.12 ✅ |
+
+查证过程：KSP 的 GitHub 上最新只到 2.3.12，而 KSP 2.3.12 自己的构建基线是 `kotlin-base = 2.3.20`
+（没有 2.4.x 的发布）。Kotlin 2.4.20 编译出来的库，元数据版本是 2.4，低版本编译器读不了；
+而本项目用 Room 和 Hilt，两个都依赖 KSP。所以 Kotlin 2.4.x 目前没有可用的 KSP，
+2.0.1 这条路走不通，1.7.3 是当前能用的最佳选择。
+
+（如果后续 KSP 发布 2.4.x，升级到 Haze 2 只要把依赖换成 `haze` + `haze-glass`，
+API 从 `hazeEffect(state, style)` 改成 `hazeGlass(input = HazeInput.Sources(state), style = GlassStyle.regular)`，
+其余布局代码不用动。）
+
+### 用法
+
+全屏只有**一个**模糊源 —— 壁纸：
+
+```kotlin
+val hazeState = rememberHazeState()
+Image(painter = painterResource(R.drawable.wallpaper_sunny_night),
+      modifier = Modifier.fillMaxSize().hazeSource(hazeState))
+```
+
+需要玻璃的面板用 `Modifier.launcherGlass(hazeState, shape, style)`（`ui/Glass.kt`）：
+
+```kotlin
+Modifier.launcherGlass(hazeState, RoundedCornerShape(26.dp), dockGlass())
+```
+
+内部做了两件容易踩坑的事：
+
+- **`clip(shape)` 必须写在 `hazeEffect` 之前**，否则圆角裁不到模糊上（Haze 官方 sample 的写法）。
+- **`MaterialTheme.colorScheme.surface` 必须是不透明的**：Cupertino 材质预设拿它当玻璃背景色，
+  半透明会让没被模糊的原图从玻璃背后透出来（主题里已改为 `0xFF1C1C1E`）。
+
+应用位置：Dock（thin）、文件夹卡片（regular）、控制中心面板（thick）、小组件选择器（thick）。
+玻璃上的文字统一用 `OnGlass`（跟随主题的 `onSurface`），深色主题白字、浅色主题深字，两种情况都能读。
+
+### 平台差异
+
+Android 12（API 31）以下 Haze 拿不到 `RenderEffect`，会自动退化成半透明遮罩（有玻璃感但没有模糊）。
+另外 Haze 明确跳过了 API 31 —— 它在 31 上用遮罩，32 及以上才真正模糊
+（`HazeDefaults.blurEnabled()` 的行为）。所以"真·毛玻璃"的最低要求是 Android 13。
 
 ## 流畅度与动效
 
@@ -110,6 +168,16 @@ Dock 的 `zIndex` 属于布局阶段、没法延迟读，所以用一个量化�
 - 翻页：壁纸反向位移做视差 + 指示器圆点大小弹簧过渡
 - 分页预组合相邻页（`beyondBoundsPageCount = 1`），滑动时不用现场组合
 
+### 玻璃的成本
+
+模糊的开销和像素数成正比，所以：
+
+- 统一开了 **0.8 降采样**（`Glass.kt` 的 `INPUT_SCALE`）：总像素数减少约 35%，肉眼基本无感。
+  这是 Haze 官方推荐的性能旋钮（`HazeInputScale.Fixed`），觉得不够快可以调到 0.6。
+- 壁纸视差会让模糊源每帧失效、重新计算模糊。这是本项目里玻璃最贵的地方。
+  低端机上如果翻页掉帧，把 `HomeScreen.kt` 里的 `PARALLAX_SHIFT_DP` 改成 `0.dp` 即可（其他动效不受影响）。
+- 同时可见的玻璃区域最多两块（常驻的 Dock + 一个浮层），没有满屏铺玻璃。
+
 ### 还有哪里可能卡
 
 - **首次启动**：`snapshot()` 要遍历全机应用，在 IO 线程，不阻塞界面；机器上装了 300+ 应用时
@@ -150,7 +218,8 @@ python3 tools/convert_web_to_android.py ../ios.25pan.com.zip
 #    或者：adb shell cmd package set-home-activity com.ios25pan.launcher/.MainActivity
 ```
 
-`minSdk 26`（Android 8），`targetSdk 35`。纯 Kotlin，无 Java 代码。
+`minSdk 26`（Android 8），`targetSdk 35`，需要 JDK 17。纯 Kotlin，无 Java 代码。
+毛玻璃在 Android 13（API 33）及以上才是真模糊，以下自动退化为半透明遮罩。
 
 > 壁纸：默认用 `wallpaper_sunny_night`，想换直接改 `HomeScreen.kt` 里的
 > `R.drawable.wallpaper_sunny_night` 为 `wallpaper_fog` 或 `wallpaper_t01f2b8957f4c756004`。
@@ -160,19 +229,43 @@ python3 tools/convert_web_to_android.py ../ios.25pan.com.zip
 
 已实现：桌面分页（HorizontalPager）、文件夹、Dock（放大动效）、系统应用按角色解析、
 系统里装了但布局里没有的应用自动补齐并按名称排序、网页书签、小组件添加与删除、
-控制中心（亮度/音量/网络面板）、编辑态（长按进入，角标移除）、包安装卸载实时刷新。
+控制中心（亮度/音量/网络面板）、编辑态（长按进入，角标移除）、包安装卸载实时刷新、
+**Haze 毛玻璃**（Dock / 文件夹 / 控制中心 / 小组件选择器，Apple 官方材质）。
 
 未实现（有意留白）：图标拖拽排序（当前是删除/添加，位置由 `LayoutEngine` 自动打包）、
 自由旋转（`rotation` 字段已在表里，UI 未开放）、真正的自由窗口、备份还原、动态壁纸
 （视频壁纸在启动器上代价太高）。
 
+## 工具链
+
+因为 Haze 1.7.3 是用 Kotlin 2.3.20 / Compose 1.12.0 编译出来的，本项目把工具链整个对齐到了它自己的
+CI 组合上（而不是各自取最新版，那才是风险所在）。所有版本都在 `gradle/libs.versions.toml` 顶部注明了来源：
+
+| 组件 | 版本 | 依据 |
+|---|---|---|
+| Haze | 1.7.3 | 最新 1.x |
+| Kotlin | 2.3.20 | Haze 1.7.3 的构建基线 |
+| KSP | 2.3.12 | 其内部基线就是 Kotlin 2.3.20；且要求 AGP ≥ 8.12.0 |
+| AGP | 8.13.0 | 满足 KSP 的 AGP 下限；仍只需 JDK 17 |
+| Gradle | 8.14.6 | 8.x 线最新，满足 AGP 8.13 |
+| Compose runtime / ui / foundation / animation | 1.12.0 | Haze 1.7.3 的构建基线 |
+| Room | 2.8.3 | Now in Android（Google 官方样本） |
+| Hilt | 2.59 | 同上 |
+| Lifecycle / Activity / core-ktx / coroutines | 2.10.0 / 1.12.2 / 1.17.0 / 1.10.1 | 同上 + Haze 1.7.3 |
+
+Compose 各构件是**显式锁版本、不用 BOM** 的：BOM 会把版本拉到它自己的组合上，
+反而和 Haze 的编译基线错开。
+
+**唯一没能查证的版本是 Material3（用了 1.5.0）**：它是按 androidx 开发分支上的
+`COMPOSE_MATERIAL3 = "1.6.0-alpha01"` 推断的稳定版。如果 `./gradlew :app:assembleDebug`
+报找不到这个版本，改成 1.4.x 或 1.5.x 里实际存在的版本即可（不影响 Haze）。
+
 ## 说明
 
-本次开发环境里没有 JDK 和 Android SDK，也拿不到 Gradle 依赖，所以**代码未经编译验证**。
-领域层（`domain/`）是纯 Kotlin 且带了单元测试，逻辑已经跑通；UI 层请用
-`./gradlew :app:assembleDebug` 首次编译时核对。
+本次开发环境里没有 JDK 和 Android SDK，也拿不到 Maven Central，所以**代码未经编译验证** ——
+这次的版本号不是凭记忆写的，而是逐个查证过的（Haze 的版本矩阵来自它的 GitHub 仓库，
+KSP / Gradle / Hilt 的可用版本来自各自的 release 记录，Room / Lifecycle 来自 Google 官方样本
+Now in Android 的版本目录）。
 
-需要留意的版本相关 API（都要求 foundation 1.6+，当前 BOM 2024.12 对应 1.7.x）：
-`combinedClickable` 的 `indication` / `interactionSource` 参数、`HorizontalPager` 的
-`beyondBoundsPageCount`、`PagerState.currentPageOffsetFraction`。
-
+已经做的静态检查：括号平衡、包名与目录一致、导入无冗余、Kotlin 源文件结构自检。
+首次编译请跑 `./gradlew :app:assembleDebug`（wrapper 已就位，指向 Gradle 8.14.6）。

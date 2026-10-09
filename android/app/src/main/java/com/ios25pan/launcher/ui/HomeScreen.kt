@@ -54,6 +54,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import com.ios25pan.launcher.R
 import com.ios25pan.launcher.domain.DesktopItem
 import com.ios25pan.launcher.domain.ItemType
@@ -78,6 +80,8 @@ fun HomeScreen(
 ) {
     val state by store.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    // 全屏只有一个模糊源（壁纸），所有玻璃面板共享它
+    val hazeState = rememberHazeState()
 
     LaunchedEffect(Unit) {
         store.effects.collect { effect ->
@@ -112,6 +116,9 @@ fun HomeScreen(
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .fillMaxSize()
+                // hazeSource 放在 graphicsLayer 之前：视差变换属于"源内容"的一部分，
+                // 会被一起捕获进模糊，滑块时玻璃里的背景也跟着动
+                .hazeSource(hazeState)
                 .graphicsLayer {
                     translationX = -pagerState.currentPageOffsetFraction * parallaxPx
                     // 稍微放大，位移时才不会露出边缘
@@ -143,7 +150,7 @@ fun HomeScreen(
             }
 
             PageIndicator(count = pages.size, current = pagerState.currentPage)
-            Dock(items = state.desktop.dock, store = store)
+            Dock(items = state.desktop.dock, store = store, hazeState = hazeState)
         }
 
         // 文件夹：记住最后打开的那个 id，这样退出动画播放期间还有内容可以画
@@ -162,11 +169,13 @@ fun HomeScreen(
 
         ControlCenter(
             visible = state.controlCenterOpen,
+            hazeState = hazeState,
             onClose = { store.dispatch(HomeIntent.SetControlCenter(false)) },
         )
 
         if (state.widgetPickerOpen) {
             WidgetPicker(
+                hazeState = hazeState,
                 providers = state.providers,
                 onPick = { store.dispatch(HomeIntent.PickProvider(it)) },
                 onDismiss = { store.dispatch(HomeIntent.SetWidgetPicker(false)) },

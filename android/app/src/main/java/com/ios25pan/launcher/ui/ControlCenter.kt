@@ -33,7 +33,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -49,6 +48,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ios25pan.launcher.R
 import com.ios25pan.launcher.ui.util.findActivity
+import dev.chrisbanes.haze.HazeState
 
 /**
  * 控制中心（对应网页端的 Wi-Fi / 蓝牙 / 亮度面板）。
@@ -61,7 +61,12 @@ import com.ios25pan.launcher.ui.util.findActivity
  * 进出用 spring 滑入滑出（不从中心缩放，避免和上面的文件夹动画撞脸）。
  */
 @Composable
-fun ControlCenter(visible: Boolean, onClose: () -> Unit, modifier: Modifier = Modifier) {
+fun ControlCenter(
+    visible: Boolean,
+    hazeState: HazeState,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
     val audio = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
@@ -90,17 +95,21 @@ fun ControlCenter(visible: Boolean, onClose: () -> Unit, modifier: Modifier = Mo
             exit = slideOutVertically(animationSpec = Motion.panelOffset) { -it } + fadeOut(),
             modifier = Modifier.align(Alignment.TopEnd),
         ) {
-            Surface(
-                shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
-                color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.fillMaxWidth(),
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .launcherGlass(
+                        hazeState,
+                        RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
+                        panelGlass(),
+                    ),
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = stringResource(R.string.control_center),
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = OnGlass,
                         )
                         Spacer(Modifier.weight(1f))
                         IconButton(onClick = onClose) {
@@ -163,7 +172,7 @@ private fun SliderRow(label: String, value: Float, onChange: (Float) -> Unit) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = OnGlass,
             modifier = Modifier.weight(0.28f),
         )
         Slider(value = value, onValueChange = onChange, modifier = Modifier.weight(0.72f))
@@ -189,7 +198,7 @@ private fun ToggleTile(
     ) {
         Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
         Spacer(Modifier.height(6.dp))
-        Text(text = label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+        Text(text = label, style = MaterialTheme.typography.bodySmall, color = OnGlass)
     }
 }
 

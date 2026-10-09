@@ -14,7 +14,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -46,14 +46,21 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(platform(libs.androidx.compose.bom))
+
+    // Compose：显式锁定版本，不用 BOM（见 gradle/libs.versions.toml 顶部注释）
+    implementation(libs.androidx.compose.runtime)
     implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.animation)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.compose.foundation)
+    implementation(libs.androidx.compose.animation)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.icons.extended)
     debugImplementation(libs.androidx.compose.ui.tooling)
+
+    // 玻璃质感
+    implementation(libs.haze)
+    implementation(libs.haze.materials)
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)

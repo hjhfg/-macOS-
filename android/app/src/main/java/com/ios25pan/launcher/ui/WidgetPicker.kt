@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -18,12 +17,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.ios25pan.launcher.R
 import com.ios25pan.launcher.domain.WidgetProvider
+import dev.chrisbanes.haze.HazeState
 
 /** 选择要添加到桌面的小组件（系统 AppWidgetProvider 列表）。 */
 @Composable
-fun WidgetPicker(providers: List<WidgetProvider>, onPick: (WidgetProvider) -> Unit, onDismiss: () -> Unit) {
+fun WidgetPicker(
+    hazeState: HazeState,
+    providers: List<WidgetProvider>,
+    onPick: (WidgetProvider) -> Unit,
+    onDismiss: () -> Unit,
+) {
     Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface) {
+        // 注意：Dialog 跑在另一个窗口里，Haze 会自动为这种跨窗口场景
+        // 打开 pre-draw 失效监听，保证玻璃内容和壁纸同步，不需要额外处理。
+        Box(modifier = Modifier.launcherGlass(hazeState, MaterialTheme.shapes.large, panelGlass())) {
             if (providers.isEmpty()) {
                 Box(
                     modifier = Modifier
@@ -31,7 +38,7 @@ fun WidgetPicker(providers: List<WidgetProvider>, onPick: (WidgetProvider) -> Un
                         .padding(32.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(stringResource(R.string.widget_no_providers), color = MaterialTheme.colorScheme.onSurface)
+                    Text(stringResource(R.string.widget_no_providers), color = OnGlass)
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize(0.9f)) {
@@ -39,7 +46,7 @@ fun WidgetPicker(providers: List<WidgetProvider>, onPick: (WidgetProvider) -> Un
                         Text(
                             text = provider.label,
                             style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = OnGlass,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { onPick(provider) }

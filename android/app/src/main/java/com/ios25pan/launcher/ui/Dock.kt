@@ -33,8 +33,10 @@ import com.ios25pan.launcher.domain.DesktopItem
 import com.ios25pan.launcher.domain.ItemType
 import com.ios25pan.launcher.mvi.HomeIntent
 import com.ios25pan.launcher.mvi.HomeStore
+import dev.chrisbanes.haze.HazeState
 import kotlin.math.abs
 
+private val DOCK_SHAPE = RoundedCornerShape(26.dp)
 private const val MAX_EXTRA_SCALE = 0.55f
 private const val MAGNIFY_RADIUS_SLOTS = 1.6f
 
@@ -52,7 +54,12 @@ private const val MAGNIFY_RADIUS_SLOTS = 1.6f
  *    指针跨过格子边界时才重组一次。
  */
 @Composable
-fun Dock(items: List<DesktopItem>, store: HomeStore, modifier: Modifier = Modifier) {
+fun Dock(
+    items: List<DesktopItem>,
+    store: HomeStore,
+    hazeState: HazeState,
+    modifier: Modifier = Modifier,
+) {
     var touchX by remember { mutableStateOf<Float?>(null) }
     var dockWidth by remember { mutableFloatStateOf(0f) }
 
@@ -61,7 +68,8 @@ fun Dock(items: List<DesktopItem>, store: HomeStore, modifier: Modifier = Modifi
             .fillMaxWidth()
             .height(78.dp)
             .padding(horizontal = 10.dp, vertical = 8.dp)
-            .background(Color(0x551C1C1E), RoundedCornerShape(26.dp))
+            // 原来是半透明纯色背景，换成毛玻璃：模糊壁纸 + Apple 的 thin 材质
+            .launcherGlass(hazeState, DOCK_SHAPE, dockGlass())
             .padding(horizontal = 6.dp)
             // 注意：onSizeChanged 与 pointerInput 必须在同一层修饰符上，
             // 否则指针 x 与下面算出来的图标中心不在同一个坐标系里，放大会偏。
