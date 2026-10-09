@@ -1,12 +1,17 @@
 package com.ios25pan.launcher
 
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.lifecycle.lifecycleScope
 import com.ios25pan.launcher.data.widget.WidgetRepository
 import com.ios25pan.launcher.domain.WidgetProvider
 import com.ios25pan.launcher.mvi.HomeIntent
@@ -14,6 +19,7 @@ import com.ios25pan.launcher.mvi.HomeStore
 import com.ios25pan.launcher.ui.HomeScreen
 import com.ios25pan.launcher.ui.theme.LauncherTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -40,9 +46,40 @@ class MainActivity : ComponentActivity() {
         store.dispatch(HomeIntent.WidgetBindResult(id, provider, widgets.isBound(id)))
     }
 
+    /** Android 13+ 用 READ_MEDIA_IMAGES，更早用 READ_EXTERNAL_STORAGE；结果只用来触发重新判定。 */
+    private val wallpaperPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        store.dispatch(HomeIntent.RefreshWallpaper)
+    }
+
+    /** 系统相册选择器：不需要任何权限声明，这是 Android 的 Photo Picker。 */
+    private val pickWallpaperLauncher = registerForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) store.dispatch(HomeIntent.PickedCustomWallpaper(uri.toString()))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // 启动器必须开这个 flag：系统才会把壁纸图层画在我们窗口背后。
+        // 没有它的话，WallpaperRender.Transparent 只会露出一片纯黑，等于"穿透"白做了。
+        window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+
+        // 平板横屏是本次的设计目标（Galaxy Tab S11 Ultra 这类大屏设备），但留一个开关：
+        // 用户在控制中心关掉"强制横屏"后，跟随系统/重力感应正常转向。
+        lifecycleScope.launch {
+            store.state.collect { s ->
+                requestedOrientation = if (s.forceLandscape) {
+                    ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
+                } else {
+                    ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                }
+            }
+        }
+
         setContent {
             LauncherTheme {
                 HomeScreen(
@@ -50,6 +87,19 @@ class MainActivity : ComponentActivity() {
                     onBindWidget = { intent, id, provider ->
                         pendingWidget = id to provider
                         bindWidgetLauncher.launch(intent)
+                    },
+                    onRequestWallpaperPermission = {
+                        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            android.Manifest.permission.READ_MEDIA_IMAGES
+                        } else {
+                            android.Manifest.permission.READ_EXTERNAL_STORAGE
+                        }
+                        wallpaperPermissionLauncher.launch(permission)
+                    },
+                    onPickCustomWallpaper = {
+                        pickWallpaperLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
                     },
                 )
             }
@@ -60,6 +110,12 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         // 开始接收小组件的 RemoteViews 更新
         widgets.startListening()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 用户可能刚从系统设置换了壁纸，或者刚在权限弹窗里点了允许——回来就重新判定一次。
+        store.dispatch(HomeIntent.RefreshWallpaper)
     }
 
     override fun onStop() {

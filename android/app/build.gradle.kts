@@ -33,6 +33,9 @@ android {
     }
     buildFeatures {
         compose = true
+        // Shizuku 的 UserService 需要一个 AIDL 接口，进程间通信靠它。
+        // 关掉的话 aidl/ 目录下的文件不会被编译进 APK，运行时会 ClassNotFound。
+        aidl = true
     }
 }
 
@@ -72,6 +75,10 @@ dependencies {
 
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
+
+    // 自由窗口：Shizuku 拿 shell 身份，用 UserService 在特权进程里执行 am / settings
+    implementation(libs.shizuku.api)
+    implementation(libs.shizuku.provider)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

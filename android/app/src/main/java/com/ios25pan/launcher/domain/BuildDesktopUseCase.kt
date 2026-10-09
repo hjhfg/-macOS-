@@ -65,6 +65,7 @@ class BuildDesktopUseCase @Inject constructor() {
             dock = dock,
             folders = folders,
             folderTitles = folderTitles,
+            grid = GridSpec.Grid(cols, rows),
         )
     }
 

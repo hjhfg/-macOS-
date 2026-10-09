@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -48,16 +49,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
-import com.ios25pan.launcher.R
+import com.ios25pan.launcher.data.wallpaper.WallpaperRender
 import com.ios25pan.launcher.domain.DesktopItem
+import com.ios25pan.launcher.domain.GridSpec
 import com.ios25pan.launcher.domain.ItemType
 import com.ios25pan.launcher.domain.WidgetProvider
 import com.ios25pan.launcher.mvi.HomeEffect
@@ -78,6 +82,8 @@ private val PARALLAX_SHIFT_DP = 40.dp
 fun HomeScreen(
     store: HomeStore = hiltViewModel(),
     onBindWidget: (Intent, Int, WidgetProvider) -> Unit,
+    onRequestWallpaperPermission: () -> Unit,
+    onPickCustomWallpaper: () -> Unit,
 ) {
     val state by store.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -85,6 +91,14 @@ fun HomeScreen(
     var blurDisabled by remember { mutableStateOf(SafeMode.blurDisabled()) }
     // 全屏只有一个模糊源（壁纸），所有玻璃面板共享它
     val hazeState = rememberHazeState(blurEnabled = !blurDisabled)
+
+    // 平板横屏下可用面积大得多：按实际 dp 重新算网格列数，而不是手机那套写死的 4x6。
+    // LocalConfiguration 在旋转 / 折叠展开时会自己触发重组，不需要额外监听器。
+    val configuration = LocalConfiguration.current
+    LaunchedEffect(configuration.screenWidthDp, configuration.screenHeightDp) {
+        store.dispatch(HomeIntent.ScreenSizeChanged(configuration.screenWidthDp, configuration.screenHeightDp))
+    }
+    val expanded = GridSpec.isExpanded(configuration.screenWidthDp)
 
     LaunchedEffect(Unit) {
         store.effects.collect { effect ->
@@ -111,24 +125,7 @@ fun HomeScreen(
     val parallaxPx = with(LocalDensity.current) { PARALLAX_SHIFT_DP.toPx() }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 壁纸：跟随翻页轻微反向位移，做出景深。
-        // 位移量在 graphicsLayer 里延迟读取 currentPageOffsetFraction —— 每帧只重绘图层，不重组。
-        Image(
-            painter = painterResource(R.drawable.wallpaper_sunny_night),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxSize()
-                // hazeSource 放在 graphicsLayer 之前：视差变换属于"源内容"的一部分，
-                // 会被一起捕获进模糊，滑块时玻璃里的背景也跟着动
-                .hazeSource(hazeState)
-                .graphicsLayer {
-                    translationX = -pagerState.currentPageOffsetFraction * parallaxPx
-                    // 稍微放大，位移时才不会露出边缘
-                    scaleX = 1.08f
-                    scaleY = 1.08f
-                },
-        )
+        Wallpaper(render = state.wallpaper, hazeState = hazeState, pagerState = pagerState, parallaxPx = parallaxPx)
 
         Column(modifier = Modifier.fillMaxSize()) {
             StatusBar(
@@ -137,6 +134,15 @@ fun HomeScreen(
                 onOpenWidgetPicker = { store.dispatch(HomeIntent.SetWidgetPicker(true)) },
                 onExitEdit = { store.dispatch(HomeIntent.ExitEdit) },
             )
+
+            if (state.openWindows.isNotEmpty()) {
+                WindowShelf(
+                    windows = state.openWindows,
+                    hazeState = hazeState,
+                    onFocus = { store.dispatch(HomeIntent.FocusWindow(it)) },
+                    onClose = { store.dispatch(HomeIntent.CloseWindow(it)) },
+                )
+            }
 
             HorizontalPager(
                 state = pagerState,
@@ -148,12 +154,14 @@ fun HomeScreen(
             ) { index ->
                 val page = pages.getOrNull(index)
                 if (page != null) {
-                    DesktopGrid(slots = page.slots) { slot -> DesktopCell(slot.item, state.editing, store) }
+                    DesktopGrid(slots = page.slots, cols = state.desktop.grid.cols, rows = state.desktop.grid.rows) { slot ->
+                        DesktopCell(slot.item, state.editing, store, expanded)
+                    }
                 }
             }
 
             PageIndicator(count = pages.size, current = pagerState.currentPage)
-            Dock(items = state.desktop.dock, store = store, hazeState = hazeState)
+            Dock(items = state.desktop.dock, store = store, hazeState = hazeState, expanded = expanded)
         }
 
         // 文件夹：记住最后打开的那个 id，这样退出动画播放期间还有内容可以画
@@ -178,6 +186,18 @@ fun HomeScreen(
                 blurDisabled = disabled
                 SafeMode.setBlurDisabled(disabled)
             },
+            windowMode = state.windowMode,
+            shellState = state.shellState,
+            onWindowModeChange = { store.dispatch(HomeIntent.SetWindowMode(it)) },
+            onRequestShizuku = { store.requestShizukuPermission() },
+            onDiagnoseWindow = { store.windowDiagnostics() },
+            wallpaper = state.wallpaper,
+            onWallpaperModeChange = { store.dispatch(HomeIntent.SetWallpaperMode(it)) },
+            onWallpaperPresetChange = { store.dispatch(HomeIntent.SetWallpaperPreset(it)) },
+            onRequestWallpaperPermission = onRequestWallpaperPermission,
+            onPickCustomWallpaper = onPickCustomWallpaper,
+            forceLandscape = state.forceLandscape,
+            onForceLandscapeChange = { store.dispatch(HomeIntent.SetForceLandscape(it)) },
             onClose = { store.dispatch(HomeIntent.SetControlCenter(false)) },
         )
 
@@ -189,6 +209,48 @@ fun HomeScreen(
                 onDismiss = { store.dispatch(HomeIntent.SetWidgetPicker(false)) },
             )
         }
+    }
+}
+
+/**
+ * 壁纸层：按 [WallpaperRender] 三选一地画。
+ *
+ * 三条分支都要挂 [hazeSource]——即便是 [WallpaperRender.Transparent] 这种"什么都不画"的情况也一样，
+ * 否则 Haze 找不到源内容，面板会整体退化成不透明，而不是我们想要的"半透明但不模糊"。
+ */
+@Composable
+private fun Wallpaper(
+    render: WallpaperRender,
+    hazeState: HazeState,
+    pagerState: PagerState,
+    parallaxPx: Float,
+) {
+    val parallax = Modifier
+        .fillMaxSize()
+        // hazeSource 放在 graphicsLayer 之前：视差变换属于"源内容"的一部分，
+        // 会被一起捕获进模糊，滑块时玻璃里的背景也跟着动
+        .hazeSource(hazeState)
+        .graphicsLayer {
+            translationX = -pagerState.currentPageOffsetFraction * parallaxPx
+            // 稍微放大，位移时才不会露出边缘
+            scaleX = 1.08f
+            scaleY = 1.08f
+        }
+
+    when (render) {
+        WallpaperRender.Transparent -> Box(modifier = Modifier.fillMaxSize().hazeSource(hazeState))
+        is WallpaperRender.Bitmap -> Image(
+            bitmap = render.image,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = parallax,
+        )
+        is WallpaperRender.Preset -> Image(
+            painter = painterResource(render.resId),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = parallax,
+        )
     }
 }
 
@@ -219,7 +281,7 @@ private fun PageIndicator(count: Int, current: Int, modifier: Modifier = Modifie
 }
 
 @Composable
-private fun DesktopCell(item: DesktopItem, editing: Boolean, store: HomeStore) {
+private fun DesktopCell(item: DesktopItem, editing: Boolean, store: HomeStore, expanded: Boolean) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
@@ -268,7 +330,7 @@ private fun DesktopCell(item: DesktopItem, editing: Boolean, store: HomeStore) {
             if (item.type == ItemType.WIDGET) {
                 WidgetHost(item = item, store = store, modifier = Modifier.fillMaxSize())
             } else {
-                IconLabel(label = item.title) {
+                IconLabel(label = item.title, iconSize = GridSpec.iconPlateSize(expanded)) {
                     ItemIcon(item = item, store = store, modifier = Modifier.fillMaxSize(0.8f))
                 }
             }

@@ -31,8 +31,13 @@ Kotlin + Jetpack Compose + Material 3 + MVI + Hilt + Room/DataStore。
 ### 关于布局数据
 
 网页是 15 列的大画布，手机竖屏只有 4 列，所以不能直接照搬原坐标。
-`LayoutEngine` 保留元素**顺序**和各自的跨度，重新打包成 4×6 的网格页
+`LayoutEngine` 保留元素**顺序**和各自的跨度，重新打包成网格页
 （首次适配、以后转屏或分屏都走同一套逻辑）。
+
+列数不再是写死的 4 —— 这次加了 `domain/GridSpec.kt`：按实际可用 dp 算列数/行数，
+手机竖屏落地还是 4×6，平板横屏（本项目的目标设备是 Galaxy Tab S11 Ultra）能到 10~12 列。
+`HomeScreen` 用 `LocalConfiguration` 拿到当前尺寸，`HomeStore` 把它和布局数据、应用快照一起
+`combine` 成桌面，旋转屏幕会自动重新打包（控制中心有「强制横屏」开关，默认开，关掉就跟随重力感应）。
 
 ## 结构
 
@@ -52,9 +57,16 @@ android/
     │   ├── LayoutEngine.kt           # 网格打包
     │   ├── BuildDesktopUseCase.kt    # 布局 + 应用快照 → 可渲染桌面
     │   └── LaunchItemUseCase.kt
+    │   ├── wallpaper/WallpaperRepository.kt  # 壁纸来源仲裁：穿透 / 快照位图 / 预设
+    │   └── window/                   # 自由窗口：Shizuku 通道 + am 指令封装 + 记账表
+    │       ├── WindowShellService.kt #   运行在 Shizuku 特权进程里的 AIDL 实现
+    │       ├── WindowShell.kt        #   绑定/调用 WindowShellService 的 Binder 客户端
+    │       ├── FreeformController.kt #   封装 am start/task resize/force-stop
+    │       └── WindowRepository.kt   #   打开着哪些自由窗口（我们自己这边的记账）
     ├── mvi/                          # HomeIntent / HomeState / HomeEffect / HomeStore
     └── ui/                           # Compose：桌面页、Dock、文件夹、控制中心
         ├── Glass.kt                  # 玻璃材质统一入口（材质选择 + 降采样 + clip 顺序）
+        ├── WindowShelf.kt            # 自由窗口芯片条（点击前置 / 叉掉关闭）
         └── Motion.kt                 # 动效规格
 ```
 
@@ -198,10 +210,94 @@ Dock 的 `zIndex` 属于布局阶段、没法延迟读，所以用一个量化�
    （和文件管理器、安全工具同级），上架 Play 要提交 Permissions Declaration Form；
    **自用侧载时系统自动授予，不受限**。
 
-3. **窗口化不是启动器的活**。DeX 式独立桌面依赖 `config_isDesktopModeSupported` 这类系统级 flag，
-   OEM 层才改得动。普通应用能做的是 Taskbar 那条路：
-   `ActivityOptions.setLaunchWindowingMode(WINDOWING_MODE_FREEFORM)` 起浮动窗口，
-   前提是设备支持 freeform 且拿到 `WRITE_SECURE_SETTINGS`（Shizuku 授权）。本工程没做。
+3. **窗口不是启动器画的，是系统画的**。Android 里每个 App 跑在自己的进程、自己的 Window 上，
+   由 SystemUI / WM Shell 负责渲染、层叠、拖拽/缩放手柄——系统没有 iframe 的等价物让 A 应用
+   把 B 应用的界面渲染成自己的一个 View（这是防点击劫持/UI redressing 的刻意设计）。
+   Android 13+ 的 Activity Embedding 是唯一的官方口子，但要求**被嵌入的 App 主动声明信任宿主**，
+   普通 App 不会声明，等于不存在。
+
+   能做、也做了的是"发指令"：`ActivityOptions.setLaunchWindowingMode()` 是隐藏 API，
+   第三方进程调不了（反射也会被限制），`setLaunchBounds()` 虽公开但只能设边界、改不了 windowing mode。
+   实测可行的路径是 shell 身份执行 `am start --windowingMode 5`——于是引入 **Shizuku**，
+   详见下面「自由窗口」一节。
+
+## 壁纸：原手机的壁纸 + 可自定义
+
+默认行为是"开箱即用显示真实壁纸，不需要用户做任何事"，判定逻辑在 `WallpaperRepository`：
+
+1. 当前是**动态壁纸**（`WallpaperManager.getWallpaperInfo() != null`）→ 没法截成静态位图，
+   直接用**透明穿透**：Activity 开 `FLAG_SHOW_WALLPAPER`、主题 `windowBackground = @null`、
+   Compose 侧这块不画任何东西，系统合成的壁纸图层（含动态效果）就直接透出来，零权限。
+2. 不是动态壁纸、且有读取权限 → 截一张系统壁纸的静态快照（`WallpaperManager.getDrawable()`），
+   自己画成一张 `Image`，**可以被 Haze 模糊**。
+3. 都不满足 → 还是回退透明穿透（没有模糊，但用户始终能看到真实壁纸，不会黑屏）。
+
+**为什么默认不是直接截图**：Android 13 起 `WallpaperManager.getDrawable()` 必须持有
+`READ_MEDIA_IMAGES`（或更早版本的 `READ_EXTERNAL_STORAGE`）才能拿到真实位图，否则系统只给占位图
+甚至抛 `SecurityException`（见 `WallpaperManagerService#getWallpaperWithFeature` 的权限检查，
+`android.permission.READ_WALLPAPER_INTERNAL` / `MANAGE_EXTERNAL_STORAGE` 都是系统特权应用才有的）。
+这是一个普通的运行时危险权限，不是特殊授权，但既然不要也能"看到真实壁纸"，就不在启动时强制弹窗，
+放到控制中心按需申请。
+
+控制中心的「壁纸」区块三个选项：
+
+- **系统壁纸**：按上面的逻辑自动判定，顺带触发一次权限申请（同意了就能被模糊）。
+- **选择图片**：Android 自带的 Photo Picker（`ActivityResultContracts.PickVisualMedia`），
+  不需要任何权限声明；选中的图复制进应用私有目录，可被模糊。
+- **更换系统壁纸…**：直接拉起系统自己的壁纸选择器（`Intent.ACTION_SET_WALLPAPER`），
+  在那边选好（含系统自带的动态壁纸）之后回到启动器会自动重新判定。
+- 另外还有 3 张内置预设缩略图（转换脚本从网页端导出的），点一下直接切换，同样可被模糊。
+
+壁纸跟随翻页做视差位移（`HomeScreen.kt` 的 `PARALLAX_SHIFT_DP`），三种渲染模式（穿透 / 位图 / 预设）
+共用同一段 `graphicsLayer` 逻辑。
+
+## 自由窗口（Shizuku）
+
+点开控制中心的「窗口模式」开关，桌面图标就会尝试以**自由窗口**（而不是全屏）打开应用。
+
+### 这不是魔法，分工说清楚
+
+- **窗口不是我们画的**：系统 WM Shell 负责渲染、层叠、拖拽/缩放手柄。我们只是告诉系统
+  "请用 freeform 模式启动这个 App"，剩下的全是系统的事——所以本项目**没有**也不需要实现
+  窗口拖拽/缩放的手势，那是系统窗口装饰自带的。
+- **唯一可行的路径是发 shell 命令**：`am start --windowingMode 5`。
+  `ActivityOptions.setLaunchWindowingMode()` 是隐藏 API，第三方进程直接调用会被限制；
+  `setLaunchBounds()` 公开但改不了 windowing mode。
+- **shell 身份从哪来**：[Shizuku](https://github.com/RikkaApps/Shizuku)。用户先装 Shizuku App，
+  用 ADB 或 root 启动它一次，之后我们这边通过 Shizuku 的 **UserService** 机制
+  （`data/window/WindowShellService.kt`）把一个纯 Java 类丢进 Shizuku 拉起的特权进程
+  （uid 0 或 2000）里执行命令。**没有用已经废弃的 `Shizuku#newProcess`**——
+  官方从 13.1.1 起标记它废弃、14 起移除，UserService 才是现在推荐的方式。
+- **两个全局开关**：第一次用的时候会自动执行
+  `settings put global enable_freeform_support 1` 和
+  `settings put global force_resizable_activities 1`（跑在 shell 身份下，不需要我们的 App
+  持有 `WRITE_SECURE_SETTINGS`——shell 本来就有这个权限）。后者是"强制所有 Activity 可调整大小"，
+  不开的话一半 App 会直接拒绝进自由窗口。
+
+### 状态机
+
+控制中心会显示三种状态之一（`data/window/WindowShell.kt` 的 `ShellState`）：
+
+| 状态 | 含义 | 控制中心显示 |
+|---|---|---|
+| `NOT_RUNNING` | 没装 Shizuku，或者装了但服务没启动 | 提示去装/启动 Shizuku |
+| `NOT_GRANTED` | 服务在跑，但还没把 shell 身份授权给本应用 | 「去授权」按钮，点了弹 Shizuku 自己的对话框 |
+| `READY` | 可以执行命令了 | 正常显示窗口模式开关 |
+
+**任何一步失败都静默降级为全屏启动**——`LaunchItemUseCase` 里打开自由窗口失败会直接退回
+`startActivity`，只弹一条 Toast 说明，绝不会让用户点了图标没反应。
+
+### 已知限制
+
+- 这是**我们自己这边的记账**，不是真正的窗口管理器：`WindowRepository` 只记录"我们让系统开过哪些窗口"，
+  系统随时可能让某个窗口消失而不通知我们（用户在最近任务里划掉它…）。桌面上的「运行中」芯片条
+  （`ui/WindowShelf.kt`）以此为准，不保证绝对实时。
+- `am task resize` 需要先从 `dumpsys activity activities` 里解析出任务 id，用的是正则匹配
+  `Task{xxxxxx #123 ...}`，不同 Android 版本的 dumpsys 输出格式可能略有差异，解析失败时
+  `FreeformController` 会退回"重新 start 一次"的兜底路径。
+- **厂商可以覆盖多窗口行为**（AOSP 文档原话："device manufacturers can override these
+  multi-window behaviors"）。三星 One UI 有自己的多窗口栈，实测效果以具体 ROM 版本为准；
+  所有操作都返回成败，失败就降级，不会卡在中间状态。
 
 ## 构建
 
@@ -221,20 +317,29 @@ python3 tools/convert_web_to_android.py ../ios.25pan.com.zip
 `minSdk 26`（Android 8），`targetSdk 35`，需要 JDK 17。纯 Kotlin，无 Java 代码。
 毛玻璃在 Android 13（API 33）及以上才是真模糊，以下自动退化为半透明遮罩。
 
-> 壁纸：默认用 `wallpaper_sunny_night`，想换直接改 `HomeScreen.kt` 里的
-> `R.drawable.wallpaper_sunny_night` 为 `wallpaper_fog` 或 `wallpaper_t01f2b8957f4c756004`。
+> 壁纸：默认显示真实系统壁纸（穿透或快照，见上面「壁纸」一节），不需要配置；
+> 想强制用某张内置预设，去控制中心点一下缩略图即可，不用改代码。
 > 应用图标目前直接拿导出的 `app_safari` 当自适应图标前景，正式用建议换成自己的图。
+
+> 自由窗口：需要先在设备上装好 [Shizuku](https://shizuku.rikka.app/download/)
+> 并用 ADB 启动一次（`adb shell sh /sdcard/Android/.../start.sh`，具体命令 Shizuku App 里有）；
+> 平板上通常用无线调试（Android 11+）就能在设备上直接启动，不需要连电脑。
+> 装好之后在本启动器的控制中心点「去授权」，再打开「自由窗口打开应用」开关即可。
+> 不装 Shizuku 完全不影响其它功能，图标照常全屏打开应用。
 
 ## 已实现 / 未实现
 
 已实现：桌面分页（HorizontalPager）、文件夹、Dock（放大动效）、系统应用按角色解析、
 系统里装了但布局里没有的应用自动补齐并按名称排序、网页书签、小组件添加与删除、
 控制中心（亮度/音量/网络面板）、编辑态（长按进入，角标移除）、包安装卸载实时刷新、
-**Haze 毛玻璃**（Dock / 文件夹 / 控制中心 / 小组件选择器，Apple 官方材质）。
+**Haze 毛玻璃**（Dock / 文件夹 / 控制中心 / 小组件选择器，Apple 官方材质）、
+**平板横屏自适应网格**（`GridSpec`，手机 4×6、平板最多 12×8，旋转实时重算）、
+**真实系统壁纸**（动态壁纸透明穿透 / 静态壁纸快照模糊 / 预设 / 自定义图片，见上面「壁纸」一节）、
+**自由窗口**（Shizuku + `am start --windowingMode 5`，见上面「自由窗口」一节，失败自动降级全屏）。
 
 未实现（有意留白）：图标拖拽排序（当前是删除/添加，位置由 `LayoutEngine` 自动打包）、
-自由旋转（`rotation` 字段已在表里，UI 未开放）、真正的自由窗口、备份还原、动态壁纸
-（视频壁纸在启动器上代价太高）。
+自由旋转（`rotation` 字段已在表里，UI 未开放）、自由窗口的拖拽/缩放手势
+（这部分系统自己画、自己处理，启动器不用管）、备份还原。
 
 ## 崩溃排查
 
@@ -288,6 +393,7 @@ CI 组合上（而不是各自取最新版，那才是风险所在）。所有�
 | Room | 2.8.3 | Now in Android（Google 官方样本） |
 | Hilt | 2.59 | 同上 |
 | Lifecycle / Activity / core-ktx / coroutines | 2.10.0 / 1.12.2 / 1.17.0 / 1.10.1 | 同上 + Haze 1.7.3 |
+| Shizuku api / provider | 13.1.5 | Shizuku-API 最新稳定版（UserService 机制，非已废弃的 newProcess） |
 
 Compose 各构件是**显式锁版本、不用 BOM** 的：BOM 会把版本拉到它自己的组合上，
 反而和 Haze 的编译基线错开。

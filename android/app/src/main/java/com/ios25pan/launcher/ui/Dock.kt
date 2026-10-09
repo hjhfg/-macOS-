@@ -59,14 +59,17 @@ fun Dock(
     store: HomeStore,
     hazeState: HazeState,
     modifier: Modifier = Modifier,
+    expanded: Boolean = false,
 ) {
     var touchX by remember { mutableStateOf<Float?>(null) }
     var dockWidth by remember { mutableFloatStateOf(0f) }
+    val dockHeight = if (expanded) 92.dp else 78.dp
+    val iconFraction = if (expanded) 0.64f else 0.72f
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(78.dp)
+            .height(dockHeight)
             .padding(horizontal = 10.dp, vertical = 8.dp)
             // 原来是半透明纯色背景，换成毛玻璃：模糊壁纸 + Apple 的 thin 材质
             .launcherGlass(hazeState, DOCK_SHAPE, dockGlass())
@@ -129,7 +132,7 @@ fun Dock(
                     .clickable { store.dispatch(HomeIntent.Tap(item)) },
                 contentAlignment = Alignment.Center,
             ) {
-                ItemIcon(item = item, store = store, modifier = Modifier.fillMaxSize(0.72f))
+                ItemIcon(item = item, store = store, modifier = Modifier.fillMaxSize(iconFraction))
             }
         }
     }

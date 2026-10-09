@@ -42,6 +42,8 @@ data class Desktop(
     val folders: Map<String, List<DesktopItem>>,
     /** 文件夹 id -> 显示名（文件夹名本身存在目录项上，这里单独带出来给 UI 用）。 */
     val folderTitles: Map<String, String> = emptyMap(),
+    /** 这一次打包用的网格规格（平板横屏下比手机竖屏列数更多），UI 按它摆放，不用自己猜。 */
+    val grid: GridSpec.Grid = GridSpec.Grid.DEFAULT,
 ) {
     companion object {
         val EMPTY = Desktop(emptyList(), emptyList(), emptyMap(), emptyMap())

@@ -9,6 +9,15 @@
     <!-- 桌面小组件：绑定权限由系统在首次绑定时向用户确认 -->
     <uses-permission android:name="android.permission.BIND_APPWIDGET" tools:ignore="ProtectedPermissions" />
 
+    <!--
+      读取"原手机的壁纸"用：Android 13 起 WallpaperManager#getDrawable() 必须持有这两个之一才能拿到
+      真实位图（见 WallpaperManagerService#getWallpaperWithFeature 的权限检查），否则系统只给占位图。
+      这不是什么特殊权限，是普通的运行时危险权限，由 Control Center 里切到"系统壁纸"模式时按需申请——
+      不申请 / 被拒绝也不影响使用：退回透明穿透一样能看到真实壁纸，只是不能被毛玻璃模糊。
+    -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+
     <application
         android:name=".LauncherApp"
         android:allowBackup="true"
@@ -23,7 +32,7 @@
             android:launchMode="singleTask"
             android:resizeableActivity="true"
             android:stateNotNeeded="true"
-            android:screenOrientation="portrait"
+            android:screenOrientation="userLandscape"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -32,5 +41,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          自由窗口：Shizuku 用它把 shell 身份的 Binder 发给我们进程。这个 provider 本身什么都不做，
+          没装 Shizuku / Sui 时也完全无害——只是 Shizuku 类一直收不到 Binder，功能停在"未就绪"。
+        -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
     </application>
 </manifest>

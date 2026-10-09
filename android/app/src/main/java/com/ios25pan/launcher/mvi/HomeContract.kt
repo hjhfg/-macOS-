@@ -2,9 +2,14 @@ package com.ios25pan.launcher.mvi
 
 import android.content.Intent
 import androidx.annotation.StringRes
+import com.ios25pan.launcher.data.wallpaper.WallpaperRender
+import com.ios25pan.launcher.data.window.ShellState
+import com.ios25pan.launcher.domain.AppWindow
 import com.ios25pan.launcher.domain.Desktop
 import com.ios25pan.launcher.domain.DesktopItem
+import com.ios25pan.launcher.domain.WallpaperMode
 import com.ios25pan.launcher.domain.WidgetProvider
+import com.ios25pan.launcher.domain.WindowMode
 
 /**
  * MVI 三件套：
@@ -25,6 +30,21 @@ sealed interface HomeIntent {
     data class ProvidersLoaded(val providers: List<WidgetProvider>) : HomeIntent
     data class PickProvider(val provider: WidgetProvider) : HomeIntent
     data class WidgetBindResult(val appWidgetId: Int, val provider: WidgetProvider, val ok: Boolean) : HomeIntent
+
+    /** 屏幕可用尺寸变化（旋转 / 折叠展开）：驱动网格列数重新计算，平板横屏才能摆下更多图标。 */
+    data class ScreenSizeChanged(val widthDp: Int, val heightDp: Int) : HomeIntent
+
+    // ---- 窗口 ----
+    data class SetWindowMode(val mode: WindowMode) : HomeIntent
+    data class CloseWindow(val component: String) : HomeIntent
+    data class FocusWindow(val component: String) : HomeIntent
+
+    // ---- 壁纸 / 外观 ----
+    data class SetWallpaperMode(val mode: WallpaperMode) : HomeIntent
+    data class SetWallpaperPreset(val name: String) : HomeIntent
+    data class PickedCustomWallpaper(val uri: String) : HomeIntent
+    data object RefreshWallpaper : HomeIntent
+    data class SetForceLandscape(val value: Boolean) : HomeIntent
 }
 
 data class HomeState(
@@ -36,6 +56,11 @@ data class HomeState(
     val controlCenterOpen: Boolean = false,
     val widgetPickerOpen: Boolean = false,
     val providers: List<WidgetProvider> = emptyList(),
+    val windowMode: WindowMode = WindowMode.FULLSCREEN,
+    val openWindows: List<AppWindow> = emptyList(),
+    val shellState: ShellState = ShellState.NOT_RUNNING,
+    val wallpaper: WallpaperRender = WallpaperRender.Transparent,
+    val forceLandscape: Boolean = true,
 )
 
 sealed interface HomeEffect {
