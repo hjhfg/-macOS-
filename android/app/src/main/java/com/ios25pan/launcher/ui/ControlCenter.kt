@@ -81,6 +81,8 @@ import kotlinx.coroutines.launch
 fun ControlCenter(
     visible: Boolean,
     hazeState: HazeState,
+    glassAlpha: Float,
+    onGlassAlphaChange: (Float) -> Unit,
     blurDisabled: Boolean,
     onBlurDisabledChange: (Boolean) -> Unit,
     windowMode: WindowMode,
@@ -138,8 +140,9 @@ fun ControlCenter(
                     .fillMaxWidth()
                     .launcherGlass(
                         hazeState,
-                        RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
+                        RoundedCornerShape(bottomStart = 22.dp, bottomEnd = 22.dp),
                         panelGlass(),
+                        alpha = glassAlpha,
                     ),
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -190,6 +193,10 @@ fun ControlCenter(
 
                     Spacer(Modifier.height(12.dp))
                     SwitchRow(stringResource(R.string.glass_blur), !blurDisabled) { onBlurDisabledChange(!it) }
+                    // macOS 27 Golden Gate 的那根"Ultra Clear ↔ Tinted Glass"滑块：
+                    // 只影响透明度（alpha），和上面的"毛玻璃模糊"开关（控制是否跑模糊算法）是两件事，
+                    // 模糊关掉之后这根滑块依然有效——退化成"半透明但不模糊"的材质时，透明度还是可调的。
+                    SliderRow(stringResource(R.string.glass_opacity), glassAlpha, onGlassAlphaChange)
                     SwitchRow(stringResource(R.string.force_landscape), forceLandscape, onForceLandscapeChange)
 
                     Spacer(Modifier.height(4.dp))

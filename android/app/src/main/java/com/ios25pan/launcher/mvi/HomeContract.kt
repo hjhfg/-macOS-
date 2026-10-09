@@ -26,6 +26,9 @@ sealed interface HomeIntent {
     data class Remove(val item: DesktopItem) : HomeIntent
     data class OpenFolder(val folderId: String?) : HomeIntent
     data class SetControlCenter(val open: Boolean) : HomeIntent
+
+    /** Launchpad：macOS 意义上的"全部应用"全屏面板，取代了旧版那种铺满整个桌面的分页网格。 */
+    data class SetLaunchpad(val open: Boolean) : HomeIntent
     data class SetWidgetPicker(val open: Boolean) : HomeIntent
     data class ProvidersLoaded(val providers: List<WidgetProvider>) : HomeIntent
     data class PickProvider(val provider: WidgetProvider) : HomeIntent
@@ -45,6 +48,9 @@ sealed interface HomeIntent {
     data class PickedCustomWallpaper(val uri: String) : HomeIntent
     data object RefreshWallpaper : HomeIntent
     data class SetForceLandscape(val value: Boolean) : HomeIntent
+
+    /** Liquid Glass 全局透明度：0（几乎看穿）到 1（接近不透明），对应 macOS 27 的 "Ultra Clear ↔ Tinted Glass" 滑块。 */
+    data class SetGlassOpacity(val value: Float) : HomeIntent
 }
 
 data class HomeState(
@@ -54,6 +60,8 @@ data class HomeState(
     val editing: Boolean = false,
     val openFolderId: String? = null,
     val controlCenterOpen: Boolean = false,
+    /** Launchpad（原来挤在桌面上的全部应用分页网格）是否展开成全屏面板。 */
+    val launchpadOpen: Boolean = false,
     val widgetPickerOpen: Boolean = false,
     val providers: List<WidgetProvider> = emptyList(),
     val windowMode: WindowMode = WindowMode.FULLSCREEN,
@@ -61,6 +69,7 @@ data class HomeState(
     val shellState: ShellState = ShellState.NOT_RUNNING,
     val wallpaper: WallpaperRender = WallpaperRender.Transparent,
     val forceLandscape: Boolean = true,
+    val glassOpacity: Float = 1f,
 )
 
 sealed interface HomeEffect {

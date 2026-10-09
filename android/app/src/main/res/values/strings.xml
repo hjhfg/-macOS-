@@ -5,6 +5,7 @@
     <string name="edit_done">完成</string>
     <string name="add_widget">添加小组件</string>
     <string name="control_center">控制中心</string>
+    <string name="launchpad">Launchpad</string>
     <string name="widget_no_providers">没有可用的小组件</string>
     <string name="widget_bind_denied">系统拒绝了小组件绑定</string>
     <string name="toggle_network">网络</string>
@@ -21,6 +22,7 @@
     <string name="crash_log_copy">复制</string>
     <string name="crash_log_clear">清除</string>
     <string name="glass_blur">毛玻璃模糊</string>
+    <string name="glass_opacity">Liquid Glass 透明度</string>
     <string name="force_landscape">强制横屏（平板模式）</string>
 
     <string name="window_mode">窗口模式</string>

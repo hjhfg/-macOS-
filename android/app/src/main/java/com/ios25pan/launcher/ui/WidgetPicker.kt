@@ -23,6 +23,7 @@ import dev.chrisbanes.haze.HazeState
 @Composable
 fun WidgetPicker(
     hazeState: HazeState,
+    glassAlpha: Float,
     providers: List<WidgetProvider>,
     onPick: (WidgetProvider) -> Unit,
     onDismiss: () -> Unit,
@@ -30,7 +31,7 @@ fun WidgetPicker(
     Dialog(onDismissRequest = onDismiss) {
         // 注意：Dialog 跑在另一个窗口里，Haze 会自动为这种跨窗口场景
         // 打开 pre-draw 失效监听，保证玻璃内容和壁纸同步，不需要额外处理。
-        Box(modifier = Modifier.launcherGlass(hazeState, MaterialTheme.shapes.large, panelGlass())) {
+        Box(modifier = Modifier.launcherGlass(hazeState, MaterialTheme.shapes.large, panelGlass(), alpha = glassAlpha)) {
             if (providers.isEmpty()) {
                 Box(
                     modifier = Modifier
