@@ -2,11 +2,24 @@ package com.ios25pan.launcher.ui
 
 import android.content.Intent
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,13 +37,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -42,6 +61,10 @@ import com.ios25pan.launcher.domain.WidgetProvider
 import com.ios25pan.launcher.mvi.HomeEffect
 import com.ios25pan.launcher.mvi.HomeIntent
 import com.ios25pan.launcher.mvi.HomeStore
+import kotlin.math.abs
+
+/** 壁纸跟随翻页做视差，位移量（dp）。 */
+private val PARALLAX_SHIFT_DP = 40.dp
 
 /**
  * 桌面主页：壁纸 + 可横滑的页面（HorizontalPager）+ Dock + 覆盖层（文件夹 / 控制中心 / 小组件选择器）。
@@ -78,13 +101,23 @@ fun HomeScreen(
         }
     }
 
+    val parallaxPx = with(LocalDensity.current) { PARALLAX_SHIFT_DP.toPx() }
+
     Box(modifier = Modifier.fillMaxSize()) {
-        // 壁纸（网页端导出的两张背景图）
+        // 壁纸：跟随翻页轻微反向位移，做出景深。
+        // 位移量在 graphicsLayer 里延迟读取 currentPageOffsetFraction —— 每帧只重绘图层，不重组。
         Image(
             painter = painterResource(R.drawable.wallpaper_sunny_night),
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    translationX = -pagerState.currentPageOffsetFraction * parallaxPx
+                    // 稍微放大，位移时才不会露出边缘
+                    scaleX = 1.08f
+                    scaleY = 1.08f
+                },
         )
 
         Column(modifier = Modifier.fillMaxSize()) {
@@ -97,6 +130,8 @@ fun HomeScreen(
 
             HorizontalPager(
                 state = pagerState,
+                // 预组合相邻页：滑动时不会现场组合，代价是多留一页的 AndroidView 在内存里
+                beyondBoundsPageCount = 1,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
@@ -111,21 +146,24 @@ fun HomeScreen(
             Dock(items = state.desktop.dock, store = store)
         }
 
+        // 文件夹：记住最后打开的那个 id，这样退出动画播放期间还有内容可以画
         val folderId = state.openFolderId
-        if (folderId != null) {
-            val items = state.desktop.folders[folderId].orEmpty()
-            FolderOverlay(
-                items = items,
-                title = state.desktop.folderTitles[folderId].orEmpty(),
-                store = store,
-                onDismiss = { store.dispatch(HomeIntent.OpenFolder(null)) },
-                onItemClick = { store.dispatch(HomeIntent.Tap(it)) },
-            )
-        }
+        var lastFolderId by remember { mutableStateOf<String?>(null) }
+        SideEffect { folderId?.let { lastFolderId = it } }
 
-        if (state.controlCenterOpen) {
-            ControlCenter(onClose = { store.dispatch(HomeIntent.SetControlCenter(false)) })
-        }
+        FolderOverlay(
+            visible = folderId != null,
+            items = lastFolderId?.let { state.desktop.folders[it] }.orEmpty(),
+            title = lastFolderId?.let { state.desktop.folderTitles[it] }.orEmpty(),
+            store = store,
+            onDismiss = { store.dispatch(HomeIntent.OpenFolder(null)) },
+            onItemClick = { store.dispatch(HomeIntent.Tap(it)) },
+        )
+
+        ControlCenter(
+            visible = state.controlCenterOpen,
+            onClose = { store.dispatch(HomeIntent.SetControlCenter(false)) },
+        )
 
         if (state.widgetPickerOpen) {
             WidgetPicker(
@@ -147,7 +185,11 @@ private fun PageIndicator(count: Int, current: Int, modifier: Modifier = Modifie
         horizontalArrangement = Arrangement.Center,
     ) {
         repeat(count) { i ->
-            val size by animateDpAsState(if (i == current) 8.dp else 6.dp, label = "dot")
+            val size by animateDpAsState(
+                targetValue = if (i == current) 8.dp else 6.dp,
+                animationSpec = Motion.springyDp,
+                label = "dot",
+            )
             Box(
                 modifier = Modifier
                     .padding(horizontal = 3.dp)
@@ -161,11 +203,46 @@ private fun PageIndicator(count: Int, current: Int, modifier: Modifier = Modifie
 
 @Composable
 private fun DesktopCell(item: DesktopItem, editing: Boolean, store: HomeStore) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.86f else 1f,
+        animationSpec = Motion.snappyFloat,
+        label = "press",
+    )
+
+    // 编辑态的抖动：给每个图标一个不同的周期，避免整齐划一地"齐步走"
+    val wiggle = if (editing) {
+        val transition = rememberInfiniteTransition(label = "wiggle")
+        transition.animateFloat(
+            initialValue = -1.3f,
+            targetValue = 1.3f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(
+                    durationMillis = 150 + abs(item.id.hashCode() % 6) * 22,
+                    easing = FastOutSlowInEasing,
+                ),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "wiggle",
+        )
+    } else {
+        null
+    }
+
     Box(modifier = Modifier.fillMaxSize().padding(2.dp)) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .graphicsLayer {
+                    // 三个值都是延迟读取：按下、抖动、都不触发重组，只重绘图层
+                    scaleX = pressScale
+                    scaleY = pressScale
+                    rotationZ = wiggle?.value ?: 0f
+                }
                 .combinedClickable(
+                    interactionSource = interaction,
+                    indication = null, // 用缩放做反馈，不画水波纹（更接近 iOS，也少一层绘制）
                     onClick = { store.dispatch(HomeIntent.Tap(item)) },
                     onLongClick = { store.dispatch(HomeIntent.LongPress(item)) },
                 ),
@@ -180,12 +257,15 @@ private fun DesktopCell(item: DesktopItem, editing: Boolean, store: HomeStore) {
             }
         }
 
-        if (editing && item.type != ItemType.DIVIDER) {
+        AnimatedVisibility(
+            visible = editing && item.type != ItemType.DIVIDER,
+            enter = scaleIn(animationSpec = Motion.panelScale, initialScale = 0.4f) + fadeIn(),
+            exit = scaleOut(animationSpec = Motion.panelScale, targetScale = 0.4f) + fadeOut(),
+            modifier = Modifier.align(Alignment.TopStart),
+        ) {
             IconButton(
                 onClick = { store.dispatch(HomeIntent.Remove(item)) },
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .size(28.dp),
+                modifier = Modifier.size(34.dp), // 保证可点区域够大
             ) {
                 Icon(
                     Icons.Default.Close,

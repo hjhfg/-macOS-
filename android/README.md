@@ -64,6 +64,61 @@ Compose UI  ──Intent──▶  HomeStore.reduce()  ──▶ State ──▶
                               └─▶ perform()：IO / 启动 Activity / 系统服务 ──▶ Effect
 ```
 
+## 流畅度与动效
+
+掉帧基本都出在"把每帧都在变的东西放进了组合期"和"把阻塞 IPC 放错了线程"上。逐条处理如下。
+
+### 避开重组：延迟读取
+
+每帧变化的状态一律放进 `graphicsLayer { }` 的 lambda 里读 —— 这里读取状态只会让**图层重绘**，
+不会触发重组。用在这几处：
+
+| 位置 | 每帧变化的量 | 不这么做会怎样 |
+| --- | --- | --- |
+| Dock 放大 | 指针 x | 手指每动一像素就重组整个 Dock |
+| 壁纸视差 | `currentPageOffsetFraction` | 翻页每一帧重组整棵树 |
+| 图标按压缩放 | 按压状态 | 按下时重组整个格子 |
+| 编辑态抖动 | 无限动画的当前值 | 整页 24 个格子每帧重组 |
+
+Dock 的 `zIndex` 属于布局阶段、没法延迟读，所以用一个量化后的 `derivedStateOf`
+（指针落在第几个格子）来触发，只在跨格时重组一次，而不是每次移动都重组。
+
+### 避开主线程：PackageManager 查询
+
+`queryIntentActivities` / `loadLabel` 都是阻塞式 IPC，一次快照要查十几次。处理方式：
+包变化广播**去抖 400ms**（安装/更新会连发好几条）、整条链路走 `Dispatchers.IO`
+（不是 `Default`，那是给 CPU 密集任务用的）、末尾 `distinctUntilChanged()`
+让"变了包但桌面没变"的情况不再重组。中文排序用的 `Collator` 构造不便宜，也复用了一份。
+
+### 别反复重绘：小组件与图标
+
+- `AndroidView` 刻意不写 `update = { invalidate() }` —— update 每次重组都会跑，
+  那会让小组件在无关的重组里反复重绘 RemoteViews。
+- 图标加载的初始值**同步取自内存缓存**，所以翻回上一页时图标第一帧就在，
+  不会"空白 → 淡入"地闪一下；只有缓存没命中、真的等了一会儿才出现的图标才做淡入
+  （用 `Animatable`，因为 `animateFloatAsState` 的初始值等于目标值，动画根本不会跑）。
+
+### 动效
+
+统一用 spring 而不是固定时长补间（`ui/Motion.kt`）：手势驱动的界面里动画经常被中途打断，
+弹簧能从当前速度接着走，补间会重新起跑，看着就是顿一下。
+
+- 文件夹展开 / 收起：缩放 + 淡入淡出，轻微回弹
+- 控制中心：从顶部滑入滑出 + 遮罩淡入淡出（不回弹，否则滑到底会抖）
+- 图标按压：缩放到 0.86，弹簧回位；不画水波纹，少一层绘制也更接近 iOS
+- 编辑态：每个图标以略微不同的周期左右摆动（避免整齐划一地"齐步走"），删除角标弹簧缩放入场
+- 翻页：壁纸反向位移做视差 + 指示器圆点大小弹簧过渡
+- 分页预组合相邻页（`beyondBoundsPageCount = 1`），滑动时不用现场组合
+
+### 还有哪里可能卡
+
+- **首次启动**：`snapshot()` 要遍历全机应用，在 IO 线程，不阻塞界面；机器上装了 300+ 应用时
+  可以考虑把结果缓存到 Room。
+- **壁纸解码**：`painterResource` 首次解码在主线程，只发生一次。想要彻底避免就换 Coil
+  异步加载。
+- **DPR 高的大屏**：`IconCache` 目前按 128px 缓存、上限 160 张（约 10MB），
+  可按屏幕密度调整。
+
 ## 三个绕不开的点
 
 1. **小组件没法纯 Compose**。`AppWidgetHost` 返回的是 `RemoteViews`，属于 View 体系，
@@ -115,4 +170,9 @@ python3 tools/convert_web_to_android.py ../ios.25pan.com.zip
 
 本次开发环境里没有 JDK 和 Android SDK，也拿不到 Gradle 依赖，所以**代码未经编译验证**。
 领域层（`domain/`）是纯 Kotlin 且带了单元测试，逻辑已经跑通；UI 层请用
-`./gradlew :app:assembleDebug` 首次编译时核对（主要是 Compose API 版本相关的细节）。
+`./gradlew :app:assembleDebug` 首次编译时核对。
+
+需要留意的版本相关 API（都要求 foundation 1.6+，当前 BOM 2024.12 对应 1.7.x）：
+`combinedClickable` 的 `indication` / `interactionSource` 参数、`HorizontalPager` 的
+`beyondBoundsPageCount`、`PagerState.currentPageOffsetFraction`。
+

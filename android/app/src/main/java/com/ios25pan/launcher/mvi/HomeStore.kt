@@ -23,8 +23,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
@@ -54,12 +57,18 @@ class HomeStore @Inject constructor(
 
     init {
         viewModelScope.launch {
-            combine(
-                desktopRepo.observe(),
-                prefs.hiddenActions,
-                apps.packageChanges().onStart { emit(Unit) }.map { apps.snapshot() },
-            ) { items, hidden, snapshot -> buildDesktop(items, snapshot, hidden) }
-                .flowOn(Dispatchers.Default)
+            // 安装/更新会连发好几条广播，去抖合并成一次；
+            // 首次加载走 merge 的 flowOf(Unit)，不受去抖影响。
+            val snapshots = merge(flowOf(Unit), apps.packageChanges().debounce(PACKAGE_DEBOUNCE_MS))
+                .map { apps.snapshot() }
+
+            combine(desktopRepo.observe(), prefs.hiddenActions, snapshots) { items, hidden, snapshot ->
+                buildDesktop(items, snapshot, hidden)
+            }
+                // PackageManager 查询是阻塞式 IPC，必须放在 IO 而不是 Default
+                .flowOn(Dispatchers.IO)
+                // 包变化不一定真的改变桌面，别为了同样的结果重组一遍
+                .distinctUntilChanged()
                 .collect { dispatch(HomeIntent.Loaded(it)) }
         }
     }
@@ -152,5 +161,14 @@ class HomeStore @Inject constructor(
 
     suspend fun loadIcon(flat: String) = apps.icon(flat)
 
+    /** 同步取内存缓存里的图标（可能为空，为空时 UI 会用占位并等 loadIcon 回来）。 */
+    fun cachedIcon(flat: String) = apps.cachedIcon(flat)
+
     fun widgetView(context: Context, appWidgetId: Int): View? = widgets.hostView(context, appWidgetId)
+
+    private companion object {
+        /** 包变化广播去抖：安装/更新会连发多条，且每次都要全量查 PackageManager。 */
+        const val PACKAGE_DEBOUNCE_MS = 400L
+    }
+
 }

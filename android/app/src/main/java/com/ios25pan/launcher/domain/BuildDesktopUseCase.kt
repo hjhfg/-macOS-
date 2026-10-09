@@ -46,10 +46,9 @@ class BuildDesktopUseCase @Inject constructor() {
         }
 
         val extraGroup = (groups.keys.maxOrNull() ?: -1) + 1
-        val collator = Collator.getInstance(Locale.CHINA)
         val extras = snapshot.apps
             .filter { it.component !in used && "app:${it.component}" !in hidden }
-            .sortedWith { a, b -> collator.compare(a.label, b.label) }
+            .sortedWith { a, b -> CHINESE_COLLATOR.compare(a.label, b.label) }
             .map {
                 DesktopItem(
                     id = "app:${it.component}", zone = Zone.PAGE, page = extraGroup,
@@ -67,6 +66,11 @@ class BuildDesktopUseCase @Inject constructor() {
             folders = folders,
             folderTitles = folderTitles,
         )
+    }
+
+    private companion object {
+        /** 中文按拼音排序用；Collator 构造不便宜，复用一份。 */
+        private val CHINESE_COLLATOR = Collator.getInstance(Locale.CHINA)
     }
 
     private fun resolve(item: DesktopItem, snapshot: AppSnapshot): DesktopItem =

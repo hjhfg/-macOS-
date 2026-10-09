@@ -5,6 +5,11 @@ import android.content.Intent
 import android.media.AudioManager
 import android.os.Build
 import android.provider.Settings
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,8 +27,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Nfc
-import androidx.compose.material.icons.filled.SignalWifiStatusbarConnectedNoInternet4
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -52,9 +57,11 @@ import com.ios25pan.launcher.ui.util.findActivity
  *  - 亮度：只改当前窗口亮度（WindowManager.LayoutParams.screenBrightness），不需要 WRITE_SETTINGS
  *  - 音量：AudioManager 直接设置，不需要权限
  *  - 网络 / 蓝牙 / NFC：Android 10+ 的 Settings.Panel 面板（系统弹窗），第三方应用也允许拉起
+ *
+ * 进出用 spring 滑入滑出（不从中心缩放，避免和上面的文件夹动画撞脸）。
  */
 @Composable
-fun ControlCenter(onClose: () -> Unit, modifier: Modifier = Modifier) {
+fun ControlCenter(visible: Boolean, onClose: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
     val audio = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
@@ -66,73 +73,84 @@ fun ControlCenter(onClose: () -> Unit, modifier: Modifier = Modifier) {
     var ring by remember { mutableFloatStateOf(streamRatio(audio, AudioManager.STREAM_RING)) }
     var alarm by remember { mutableFloatStateOf(streamRatio(audio, AudioManager.STREAM_ALARM)) }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color(0x99000000))
-            .clickable { onClose() },
-        contentAlignment = Alignment.TopEnd,
-    ) {
-        Surface(
-            shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
-            color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier.fillMaxWidth(),
+    Box(modifier = modifier.fillMaxSize()) {
+        // 遮罩与面板分别动画：遮罩只淡入淡出，面板从顶部滑下来
+        AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0x99000000))
+                    .clickable { onClose() },
+            )
+        }
+
+        AnimatedVisibility(
+            visible = visible,
+            enter = slideInVertically(animationSpec = Motion.panelOffset) { -it } + fadeIn(),
+            exit = slideOutVertically(animationSpec = Motion.panelOffset) { -it } + fadeOut(),
+            modifier = Modifier.align(Alignment.TopEnd),
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = stringResource(R.string.control_center),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.Default.Close, contentDescription = null)
+            Surface(
+                shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = stringResource(R.string.control_center),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = onClose) {
+                            Icon(Icons.Default.Close, contentDescription = null)
+                        }
                     }
-                }
-                Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(8.dp))
 
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ToggleTile(
-                        icon = Icons.Default.Wifi,
-                        label = stringResource(R.string.toggle_network),
-                        modifier = Modifier.weight(1f),
-                    ) { openPanel(context, Settings.Panel.ACTION_INTERNET_CONNECTIVITY, Settings.ACTION_WIFI_SETTINGS) }
-                    ToggleTile(
-                        icon = Icons.Default.Bluetooth,
-                        label = stringResource(R.string.toggle_bluetooth),
-                        modifier = Modifier.weight(1f),
-                    ) { openPanel(context, Settings.Panel.ACTION_BLUETOOTH, Settings.ACTION_BLUETOOTH_SETTINGS) }
-                    ToggleTile(
-                        icon = Icons.Default.Nfc,
-                        label = stringResource(R.string.toggle_nfc),
-                        modifier = Modifier.weight(1f),
-                    ) { openPanel(context, Settings.Panel.ACTION_NFC, Settings.ACTION_NFC_SETTINGS) }
-                    ToggleTile(
-                        icon = Icons.Default.VolumeUp,
-                        label = stringResource(R.string.volume_title),
-                        modifier = Modifier.weight(1f),
-                    ) { openPanel(context, Settings.Panel.ACTION_VOLUME, Settings.ACTION_SOUND_SETTINGS) }
-                }
-
-                Spacer(Modifier.height(16.dp))
-                SliderRow(stringResource(R.string.brightness), brightness) {
-                    brightness = it
-                    activity?.window?.apply {
-                        attributes = attributes.apply { screenBrightness = it.coerceIn(0.02f, 1f) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ToggleTile(
+                            icon = Icons.Default.Wifi,
+                            label = stringResource(R.string.toggle_network),
+                            modifier = Modifier.weight(1f),
+                        ) { openPanel(context, Settings.Panel.ACTION_INTERNET_CONNECTIVITY, Settings.ACTION_WIFI_SETTINGS) }
+                        ToggleTile(
+                            icon = Icons.Default.Bluetooth,
+                            label = stringResource(R.string.toggle_bluetooth),
+                            modifier = Modifier.weight(1f),
+                        ) { openPanel(context, Settings.Panel.ACTION_BLUETOOTH, Settings.ACTION_BLUETOOTH_SETTINGS) }
+                        ToggleTile(
+                            icon = Icons.Default.Nfc,
+                            label = stringResource(R.string.toggle_nfc),
+                            modifier = Modifier.weight(1f),
+                        ) { openPanel(context, Settings.Panel.ACTION_NFC, Settings.ACTION_NFC_SETTINGS) }
+                        ToggleTile(
+                            icon = Icons.Default.VolumeUp,
+                            label = stringResource(R.string.volume_title),
+                            modifier = Modifier.weight(1f),
+                        ) { openPanel(context, Settings.Panel.ACTION_VOLUME, Settings.ACTION_SOUND_SETTINGS) }
                     }
-                }
-                SliderRow(stringResource(R.string.volume_music), music) {
-                    music = it
-                    setStream(audio, AudioManager.STREAM_MUSIC, it)
-                }
-                SliderRow(stringResource(R.string.volume_ring), ring) {
-                    ring = it
-                    setStream(audio, AudioManager.STREAM_RING, it)
-                }
-                SliderRow(stringResource(R.string.volume_alarm), alarm) {
-                    alarm = it
-                    setStream(audio, AudioManager.STREAM_ALARM, it)
+
+                    Spacer(Modifier.height(16.dp))
+                    SliderRow(stringResource(R.string.brightness), brightness) {
+                        brightness = it
+                        activity?.window?.apply {
+                            attributes = attributes.apply { screenBrightness = it.coerceIn(0.02f, 1f) }
+                        }
+                    }
+                    SliderRow(stringResource(R.string.volume_music), music) {
+                        music = it
+                        setStream(audio, AudioManager.STREAM_MUSIC, it)
+                    }
+                    SliderRow(stringResource(R.string.volume_ring), ring) {
+                        ring = it
+                        setStream(audio, AudioManager.STREAM_RING, it)
+                    }
+                    SliderRow(stringResource(R.string.volume_alarm), alarm) {
+                        alarm = it
+                        setStream(audio, AudioManager.STREAM_ALARM, it)
+                    }
                 }
             }
         }

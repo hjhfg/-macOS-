@@ -66,6 +66,9 @@ class AppRepository @Inject constructor(
         awaitClose { context.unregisterReceiver(receiver) }
     }
 
+    /** 同步取缓存里的图标（没有返回 null）。UI 用它做初始值，翻页回来时不会闪。 */
+    fun cachedIcon(flat: String): ImageBitmap? = iconCache.get(flat)
+
     suspend fun icon(flat: String): ImageBitmap? {
         iconCache.get(flat)?.let { return it }
         return withContext(Dispatchers.IO) {
