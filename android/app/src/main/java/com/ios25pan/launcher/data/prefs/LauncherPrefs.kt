@@ -13,6 +13,7 @@ import com.ios25pan.launcher.domain.WallpaperMode
 import com.ios25pan.launcher.domain.WindowMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -41,7 +42,7 @@ class LauncherPrefs @Inject constructor(@ApplicationContext private val context:
     private val windowBoundsKey = stringSetPreferencesKey("window_bounds")
 
     val hiddenActions: Flow<Set<String>> =
-        context.launcherDataStore.data.map { it[hiddenKey] ?: emptySet() }
+        context.launcherDataStore.data.map { it[hiddenKey] ?: emptySet() }.distinctUntilChanged()
 
     suspend fun hide(action: String) {
         context.launcherDataStore.edit { p -> p[hiddenKey] = (p[hiddenKey] ?: emptySet()) + action }
@@ -51,11 +52,11 @@ class LauncherPrefs @Inject constructor(@ApplicationContext private val context:
 
     val wallpaperMode: Flow<WallpaperMode> = context.launcherDataStore.data.map {
         runCatching { WallpaperMode.valueOf(it[wallpaperModeKey] ?: "") }.getOrDefault(WallpaperMode.SYSTEM)
-    }
+    }.distinctUntilChanged()
 
-    val wallpaperUri: Flow<String?> = context.launcherDataStore.data.map { it[wallpaperUriKey] }
+    val wallpaperUri: Flow<String?> = context.launcherDataStore.data.map { it[wallpaperUriKey] }.distinctUntilChanged()
 
-    val wallpaperPreset: Flow<String?> = context.launcherDataStore.data.map { it[wallpaperPresetKey] }
+    val wallpaperPreset: Flow<String?> = context.launcherDataStore.data.map { it[wallpaperPresetKey] }.distinctUntilChanged()
 
     suspend fun setWallpaper(mode: WallpaperMode, uri: String? = null, preset: String? = null) {
         context.launcherDataStore.edit { p ->
@@ -67,7 +68,7 @@ class LauncherPrefs @Inject constructor(@ApplicationContext private val context:
 
     /** 平板桌面按横屏设计；关掉后就跟着设备传感器走。 */
     val forceLandscape: Flow<Boolean> =
-        context.launcherDataStore.data.map { it[forceLandscapeKey] ?: true }
+        context.launcherDataStore.data.map { it[forceLandscapeKey] ?: true }.distinctUntilChanged()
 
     suspend fun setForceLandscape(value: Boolean) {
         context.launcherDataStore.edit { it[forceLandscapeKey] = value }
@@ -76,7 +77,7 @@ class LauncherPrefs @Inject constructor(@ApplicationContext private val context:
     /** 0 表示跟随屏幕尺寸自动算（见 GridSpec）。 */
     val gridOverride: Flow<Pair<Int, Int>> = context.launcherDataStore.data.map {
         it[gridColsKey] ?: 0 to (it[gridRowsKey] ?: 0)
-    }
+    }.distinctUntilChanged()
 
     suspend fun setGridOverride(cols: Int, rows: Int) {
         context.launcherDataStore.edit {
@@ -89,7 +90,7 @@ class LauncherPrefs @Inject constructor(@ApplicationContext private val context:
 
     val windowMode: Flow<WindowMode> = context.launcherDataStore.data.map {
         runCatching { WindowMode.valueOf(it[windowModeKey] ?: "") }.getOrDefault(WindowMode.FULLSCREEN)
-    }
+    }.distinctUntilChanged()
 
     suspend fun setWindowMode(mode: WindowMode) {
         context.launcherDataStore.edit { it[windowModeKey] = mode.name }

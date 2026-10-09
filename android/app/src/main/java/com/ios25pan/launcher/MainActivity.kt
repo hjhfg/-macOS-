@@ -19,6 +19,8 @@ import com.ios25pan.launcher.mvi.HomeStore
 import com.ios25pan.launcher.ui.HomeScreen
 import com.ios25pan.launcher.ui.theme.LauncherTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -70,14 +72,25 @@ class MainActivity : ComponentActivity() {
 
         // 平板横屏是本次的设计目标（Galaxy Tab S11 Ultra 这类大屏设备），但留一个开关：
         // 用户在控制中心关掉"强制横屏"后，跟随系统/重力感应正常转向。
+        //
+        // 坑：之前这里直接 collect 了整个 state，而 state 在每次翻页 / 点击 / 任何 dispatch
+        // 都会重新 emit（PageChanged 每次都会产出一个新的 currentPage，StateFlow 的结构相等去重
+        // 救不了它）。于是每划一下桌面都会重新 setRequestedOrientation 一次——即使值没变，
+        // 系统也会当成一次方向请求去重新走一遍布局流程，和 HorizontalPager 的滑动动画抢一帧，
+        // 表现出来就是整页图标/状态栏在滑动时重叠、重影。
+        // 改成只在 forceLandscape 这个字段真正变化时才设置一次。
         lifecycleScope.launch {
-            store.state.collect { s ->
-                requestedOrientation = if (s.forceLandscape) {
-                    ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
-                } else {
-                    ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            store.state
+                .map { it.forceLandscape }
+                .distinctUntilChanged()
+                .collect { forceLandscape ->
+                    val target = if (forceLandscape) {
+                        ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
+                    } else {
+                        ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                    }
+                    if (requestedOrientation != target) requestedOrientation = target
                 }
-            }
         }
 
         setContent {
