@@ -49,6 +49,24 @@ SYSTEM_ROLES: dict[str, tuple[str, str]] = {
 DOCK_EXTRA_ROLE_SKIP = {"trash", "app-23"}  # 废纸篓、锁屏：Android 无对应能力
 
 
+def is_image(path: Path) -> bool:
+    """按魔数判断是不是真图片。
+
+    源站导出里存在"扩展名是 .png、内容其实是 HTML"的文件（抓图标时拿到的 404 页面）。
+    这种文件混进 res/drawable 后，构建期 aapt2 只是警告并原样拷贝，
+    到了运行时解码失败就会崩 —— 所以必须在转换阶段拦掉。
+    """
+    with path.open("rb") as f:
+        head = f.read(16)
+    if head.startswith(b"\x89PNG\r\n\x1a\n") or head.startswith(b"\xff\xd8\xff") or head.startswith(b"GIF8"):
+        return True
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return True
+    if head.lstrip().startswith((b"<svg", b"<?xml")):
+        return True
+    return False
+
+
 def slug(name: str) -> str:
     """资源文件名：小写 + 只保留 [a-z0-9_]，以字母开头。"""
     base = re.sub(r"[^a-z0-9_]", "_", Path(name).stem.lower())
@@ -195,11 +213,12 @@ def main() -> None:
     # 图标与壁纸
     DRAWABLE.mkdir(parents=True, exist_ok=True)
     copied = []
-    # 兜底图标：有些元素既没有内置图、系统里也查不到图标时使用
-    fallback = site / "icons/default-app.png"
-    if fallback.exists():
-        used_icons.add(str(fallback))
+    bad_images: list[str] = []
     for src in sorted(used_icons):
+        if not is_image(Path(src)):
+            # 扩展名是图片、内容不是（多为源站的 404 页面），不能放进 res/
+            bad_images.append(Path(src).name)
+            continue
         dst = DRAWABLE / (slug(src) + ".png")
         shutil.copyfile(src, dst)
         copied.append(dst.name)
@@ -215,6 +234,8 @@ def main() -> None:
     shutil.rmtree(tmp, ignore_errors=True)
     print(f"seed items: {len(items)}  (pages {len(seed['pages'])}, dock {len(dock)})")
     print(f"drawables copied: {len(copied)}")
+    if bad_images:
+        print("skipped (不是真图片，源站多为 404 页面):", ", ".join(bad_images))
     print("skipped (no Android equivalent):", ", ".join(sorted(set(skipped))))
 
 

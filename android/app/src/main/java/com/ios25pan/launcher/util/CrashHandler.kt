@@ -1,7 +1,6 @@
 package com.ios25pan.launcher.util
 
 import android.app.Application
-import android.os.Environment
 import android.util.Log
 import java.io.File
 import java.io.PrintWriter
@@ -58,6 +57,11 @@ object CrashHandler : Thread.UncaughtExceptionHandler {
         }
         runCatching {
             File(dir(), FILE_NAME).writeText((header + stack).take(MAX_CHARS))
+            // 崩在图形层的话，下次启动自动关掉模糊 —— 先保证能回到桌面
+            if (SafeMode.shouldDisableBlur(stack)) {
+                SafeMode.setBlurDisabled(true)
+                Log.w(TAG, "检测到图形层崩溃，已自动关闭毛玻璃模糊")
+            }
         }
         Log.e(TAG, "Uncaught exception on ${thread.name}", throwable)
         // 交还给系统，保证 logcat 有完整堆栈、系统也能弹"应用已停止"

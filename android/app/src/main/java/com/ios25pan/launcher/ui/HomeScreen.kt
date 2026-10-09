@@ -63,6 +63,7 @@ import com.ios25pan.launcher.domain.WidgetProvider
 import com.ios25pan.launcher.mvi.HomeEffect
 import com.ios25pan.launcher.mvi.HomeIntent
 import com.ios25pan.launcher.mvi.HomeStore
+import com.ios25pan.launcher.util.SafeMode
 import kotlin.math.abs
 
 /** 壁纸跟随翻页做视差，位移量（dp）。 */
@@ -80,8 +81,10 @@ fun HomeScreen(
 ) {
     val state by store.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    // 降级开关：崩溃过一次就先不带模糊地跑，保证能回到桌面
+    var blurDisabled by remember { mutableStateOf(SafeMode.blurDisabled()) }
     // 全屏只有一个模糊源（壁纸），所有玻璃面板共享它
-    val hazeState = rememberHazeState()
+    val hazeState = rememberHazeState(blurEnabled = !blurDisabled)
 
     LaunchedEffect(Unit) {
         store.effects.collect { effect ->
@@ -170,6 +173,11 @@ fun HomeScreen(
         ControlCenter(
             visible = state.controlCenterOpen,
             hazeState = hazeState,
+            blurDisabled = blurDisabled,
+            onBlurDisabledChange = { disabled ->
+                blurDisabled = disabled
+                SafeMode.setBlurDisabled(disabled)
+            },
             onClose = { store.dispatch(HomeIntent.SetControlCenter(false)) },
         )
 

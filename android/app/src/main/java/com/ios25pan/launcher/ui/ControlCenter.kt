@@ -33,6 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -67,6 +68,8 @@ import dev.chrisbanes.haze.HazeState
 fun ControlCenter(
     visible: Boolean,
     hazeState: HazeState,
+    blurDisabled: Boolean,
+    onBlurDisabledChange: (Boolean) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -160,7 +163,21 @@ fun ControlCenter(
                         ) { openPanel(context, Settings.Panel.ACTION_VOLUME, Settings.ACTION_SOUND_SETTINGS) }
                     }
 
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(vertical = 4.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.glass_blur),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = OnGlass,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Switch(checked = !blurDisabled, onCheckedChange = { onBlurDisabledChange(!it) })
+                    }
+
+                    Spacer(Modifier.height(8.dp))
                     SliderRow(stringResource(R.string.brightness), brightness) {
                         brightness = it
                         activity?.window?.apply {

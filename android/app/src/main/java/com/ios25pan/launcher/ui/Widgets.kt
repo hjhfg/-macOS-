@@ -8,7 +8,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.Icon
@@ -28,7 +30,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.ios25pan.launcher.R
 import com.ios25pan.launcher.domain.DesktopItem
 import com.ios25pan.launcher.domain.ItemAction
 import com.ios25pan.launcher.mvi.HomeStore
@@ -80,7 +81,32 @@ fun ItemIcon(item: DesktopItem, store: HomeStore, modifier: Modifier = Modifier)
             }
         }
         is ItemAction.Widget -> Icon(Icons.Default.Widgets, contentDescription = null, modifier = modifier)
-        else -> Image(painterResource(R.drawable.default_app), contentDescription = item.title, modifier = modifier)
+        else -> IconPlaceholder(item.title, modifier)
+    }
+}
+
+/**
+ * 图标还没加载出来时的占位（首屏每个图标都会先走这里）。
+ *
+ * 刻意用 Compose 直接画，不引任何位图资源：
+ *  - 源站导出里存在"扩展名 .png、内容其实是 HTML"的假图标，解码会失败；
+ *  - 每个格子都解码一张位图做占位也浪费，画个圆角方块几乎零成本。
+ */
+@Composable
+private fun IconPlaceholder(label: String, modifier: Modifier = Modifier) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = Color.White.copy(alpha = 0.16f),
+        modifier = modifier,
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+            Icon(
+                Icons.Default.Apps,
+                contentDescription = label,
+                tint = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.fillMaxSize(0.55f),
+            )
+        }
     }
 }
 
