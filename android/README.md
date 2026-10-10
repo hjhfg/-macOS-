@@ -70,10 +70,24 @@ android/
     │       └── WindowRepository.kt   #   打开着哪些自由窗口（我们自己这边的记账）
     ├── mvi/                          # HomeIntent / HomeState / HomeEffect / HomeStore
     └── ui/                           # Compose：桌面页、Dock、文件夹、控制中心
+        ├── HomeScreen.kt             # 顶层编排：只负责把下面这些模块叠起来、转发 HomeIntent
+        ├── StatusBar.kt              # 顶部状态栏（时间 + 控制中心/编辑完成按钮）
+        ├── Wallpaper.kt              # 壁纸（图片/视频/系统壁纸透传）+ 视频壁纸播放
+        ├── Desktop.kt                # 桌面：横滑翻页的图标网格 + 翻页小圆点
+        ├── DesktopGrid.kt            # 网格摆位算法（按 row/col/rowSpan/colSpan 定位）
+        ├── Dock.kt                   # 底部 Dock（鼠标/指针跟随放大）
         ├── Glass.kt                  # 玻璃材质统一入口（材质选择 + 降采样 + clip 顺序）
         ├── WindowShelf.kt            # 自由窗口芯片条（点击前置 / 叉掉关闭）
         └── Motion.kt                 # 动效规格
 ```
+
+> 关于"文件管理器 App""浏览器 App"：这两个不是独立的 Compose 界面/kt 文件。本项目是一个
+> **启动器（Launcher）**，桌面上"文件""浏览器"这类图标点击后，是 `HomeStore` 通过
+> `AppRepository` 按"角色"（比如 role:filemanager、role:browser）去系统里解析出用户手机上
+> 真正安装的那个 App，再用标准的 Android `Intent` 把它拉起来——启动器本身不内置、也不重新
+> 实现这些 App 的界面。所以模块化拆分时，这两个"App"没有对应的 `ui/*.kt` 文件，职责边界在
+> `data/apps/AppRepository.kt`（按 `role:xxx` 解析出目标 App 并生成 `Intent`） +
+> `mvi/HomeStore.kt`（`HomeIntent.Tap` 的处理分支，决定何时调用上面的解析逻辑）。
 
 数据流是单向的：
 
@@ -192,7 +206,7 @@ Dock 的 `zIndex` 属于布局阶段、没法延迟读，所以用一个量化�
 - 统一开了 **0.8 降采样**（`Glass.kt` 的 `INPUT_SCALE`）：总像素数减少约 35%，肉眼基本无感。
   这是 Haze 官方推荐的性能旋钮（`HazeInputScale.Fixed`），觉得不够快可以调到 0.6。
 - 壁纸视差会让模糊源每帧失效、重新计算模糊。这是本项目里玻璃最贵的地方。
-  低端机上如果翻页掉帧，把 `HomeScreen.kt` 里的 `PARALLAX_SHIFT_DP` 改成 `0.dp` 即可（其他动效不受影响）。
+  低端机上如果翻页掉帧，把 `Wallpaper.kt` 里的 `PARALLAX_SHIFT_DP` 改成 `0.dp` 即可（其他动效不受影响）。
 - 同时可见的玻璃区域最多两块（常驻的 Dock + 一个浮层），没有满屏铺玻璃。
 
 ### 还有哪里可能卡
@@ -255,7 +269,7 @@ Dock 的 `zIndex` 属于布局阶段、没法延迟读，所以用一个量化�
   在那边选好（含系统自带的动态壁纸）之后回到启动器会自动重新判定。
 - 另外还有 3 张内置预设缩略图（转换脚本从网页端导出的），点一下直接切换，同样可被模糊。
 
-壁纸跟随翻页做视差位移（`HomeScreen.kt` 的 `PARALLAX_SHIFT_DP`），四种渲染模式
+壁纸跟随翻页做视差位移（`Wallpaper.kt` 的 `PARALLAX_SHIFT_DP`），四种渲染模式
 （穿透 / 位图 / 预设 / 视频）共用同一段 `graphicsLayer` 逻辑。
 
 ### 视频壁纸
@@ -274,7 +288,7 @@ Dock 的 `zIndex` 属于布局阶段、没法延迟读，所以用一个量化�
 
 `PlayerView` 的 surface 类型只能在 XML inflate 的时候通过 `app:surface_type="texture_view"`
 定下来，没有运行时 setter，所以不是直接 `PlayerView(context)`，而是 inflate 了一个专门的
-`res/layout/video_wallpaper_player.xml`（`ui/HomeScreen.kt` 的 `VideoWallpaper` 组件）。
+`res/layout/video_wallpaper_player.xml`（`ui/Wallpaper.kt` 的 `VideoWallpaper` 组件）。
 
 生命周期上跟 `LocalLifecycleOwner` 挂钩：退到后台（`ON_STOP`）就 `pause()`，回到前台
 （`ON_START`）再 `play()`——视频解码一直跑是实打实的电量和发热成本，用户已经看不到桌面
