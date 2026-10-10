@@ -20,6 +20,8 @@ import com.ios25pan.launcher.mvi.FileManagerIntent
 import com.ios25pan.launcher.mvi.FileManagerStore
 import com.ios25pan.launcher.mvi.HomeIntent
 import com.ios25pan.launcher.mvi.HomeStore
+import com.ios25pan.launcher.mvi.VideoIntent
+import com.ios25pan.launcher.mvi.VideoStore
 import com.ios25pan.launcher.ui.HomeScreen
 import com.ios25pan.launcher.ui.theme.LauncherTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -44,6 +46,10 @@ class MainActivity : ComponentActivity() {
      * Activity 这边需要它，是因为"去系统设置开权限"这件事必须由 Activity 发起
      * （`FileManagerApp.kt` 自己拿不到 Activity 的 `startActivity`/权限请求能力）。 */
     private val fileManagerStore: FileManagerStore by viewModels()
+
+    /** "本地视频"小程序的 Store，同样和 `hiltViewModel()` 拿到的是同一个实例，理由同上——
+     * 申请"读取媒体库"这个运行时权限必须由 Activity 发起。 */
+    private val videoStore: VideoStore by viewModels()
 
     /** 等待系统绑定确认的小组件：绑定页不返回结果数据，只能回来对账。 */
     private var pendingWidget: Pair<Int, WidgetProvider>? = null
@@ -109,6 +115,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * "本地视频"小程序只需要读媒体库，不像文件管理器那样要读写整个存储——
+     * 走普通的运行时权限弹窗就够了（`READ_MEDIA_VIDEO` / `READ_EXTERNAL_STORAGE`，
+     * 具体选哪个由 [VideoStore.requiredPermission] 按系统版本决定）。
+     */
+    private val videoPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        videoStore.dispatch(VideoIntent.RecheckAccess)
+    }
+
+    private fun requestVideoAccess() {
+        videoPermissionLauncher.launch(videoStore.requiredPermission)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -167,6 +188,7 @@ class MainActivity : ComponentActivity() {
                         )
                     },
                     onRequestFilesAccess = { requestFilesAccess() },
+                    onRequestVideoAccess = { requestVideoAccess() },
                 )
             }
         }
@@ -184,6 +206,8 @@ class MainActivity : ComponentActivity() {
         store.dispatch(HomeIntent.RefreshWallpaper)
         // 同理：用户可能刚从"所有文件访问权限"设置页回来，重新判断一次文件管理器的权限状态。
         fileManagerStore.dispatch(FileManagerIntent.RecheckAccess)
+        // 同理：用户可能刚在权限弹窗里点了允许，重新判断一次"本地视频"小程序的权限状态。
+        videoStore.dispatch(VideoIntent.RecheckAccess)
     }
 
     override fun onStop() {

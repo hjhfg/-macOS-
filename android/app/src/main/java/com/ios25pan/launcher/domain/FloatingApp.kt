@@ -11,8 +11,8 @@ package com.ios25pan.launcher.domain
  * 所以代码里统一管这套东西叫 **Floating Window（浮动窗口）**。
  *
  * 浮动窗口本身的拖拽/缩放/层叠逻辑在 `ui/window/FloatingWindow.kt`，
- * 具体某个 App 长什么样在 `ui/apps/FileManagerApp.kt` / `ui/apps/BrowserApp.kt`，
- * 这个文件只放"数据长什么样"。
+ * 具体某个 App 长什么样在 `ui/apps/FileManagerApp.kt` / `ui/apps/BrowserApp.kt` /
+ * `ui/apps/VideoApp.kt`，这个文件只放"数据长什么样"。
  */
 
 /** 启动器里已经真正实现了界面的内置 App 种类。 */
@@ -22,6 +22,9 @@ enum class FloatingAppType {
 
     /** 浏览器：真实的 WebView，支持多标签页，见 `mvi/BrowserStore.kt`。 */
     BROWSER,
+
+    /** 本地视频：扫描手机本地视频库 + 播放，见 `data/video/VideoLibraryRepository.kt`。 */
+    VIDEO,
 }
 
 /**

@@ -342,17 +342,17 @@ Dock 的 `zIndex` 属于布局阶段、没法延迟读，所以用一个量化�
   multi-window behaviors"）。三星 One UI 有自己的多窗口栈，实测效果以具体 ROM 版本为准；
   所有操作都返回成败，失败就降级，不会卡在中间状态。
 
-## 内置小程序：文件管理器 / 浏览器（纯 Compose 悬浮窗口）
+## 内置小程序：文件管理器 / 浏览器 / 本地视频（纯 Compose 悬浮窗口）
 
-桌面上的「文件」「浏览器」两个图标点一下，不再走 Intent 跳到别的 App——它们是启动器自己用
-Compose 实现的真实功能，以一个可以拖拽、缩放的悬浮卡片窗口形式叠在桌面上面，和上一节的
+桌面上的「文件」「浏览器」「视频」三个图标点一下，不再走 Intent 跳到别的 App——它们是启动器
+自己用 Compose 实现的真实功能，以一个可以拖拽、缩放的悬浮卡片窗口形式叠在桌面上面，和上一节的
 Shizuku 自由窗口是两套完全不同的机制，不要混淆：
 
 | | Shizuku 自由窗口 | 本节的悬浮窗口 |
 |---|---|---|
 | 窗口谁来画 | 系统 WM Shell | 我们自己用 Compose 画（`ui/window/FloatingWindow.kt`） |
-| 装的是什么 | 手机上另一个真实安装的 App | 启动器自己实现的界面（文件管理器 / 浏览器） |
-| 依赖 | 需要装 Shizuku 并授权 | 不需要任何额外 App/权限（文件管理器自身的存储权限除外） |
+| 装的是什么 | 手机上另一个真实安装的 App | 启动器自己实现的界面（文件管理器 / 浏览器 / 本地视频） |
+| 依赖 | 需要装 Shizuku 并授权 | 不需要任何额外 App/权限（各自的存储/媒体权限除外） |
 | 拖拽/缩放手势 | 系统窗口装饰自带 | 自己手写（见下） |
 
 ### 窗口本身
@@ -372,10 +372,11 @@ Shizuku 自由窗口是两套完全不同的机制，不要混淆：
 
 `ui/window/FloatingWindowHost.kt` 负责"桌面现在该显示哪几个窗口"：读
 `HomeState.floatingWindows`（一个 `FloatingWindowEntry` 列表，顺序即层叠顺序，最后一个在最上面），
-每条记录画一个 `FloatingWindow`，按 `type` 分发到 `FileManagerApp` 或 `BrowserApp`。点桌面图标
-（`LaunchItemUseCase` 把 `role:files`/`role:browser` 拦截成 `LaunchResult.OpenVirtualApp`）、
-点已打开窗口（置顶）、点关闭按钮，分别对应 `HomeIntent.OpenFloatingApp/FocusFloatingWindow/
-CloseFloatingWindow`，逻辑都在 `HomeStore.kt` 里几行纯数据操作，不涉及任何 IO。
+每条记录画一个 `FloatingWindow`，按 `type` 分发到 `FileManagerApp`、`BrowserApp` 或 `VideoApp`。
+点桌面图标（`LaunchItemUseCase` 把 `role:files`/`role:browser`/`role:video` 拦截成
+`LaunchResult.OpenVirtualApp`）、点已打开窗口（置顶）、点关闭按钮，分别对应
+`HomeIntent.OpenFloatingApp/FocusFloatingWindow/CloseFloatingWindow`，逻辑都在 `HomeStore.kt`
+里几行纯数据操作，不涉及任何 IO。
 
 ### 文件管理器：真实的增删改查
 
@@ -414,10 +415,28 @@ Google Maven，不能新增 Gradle 依赖），用的是和 `data/prefs/Launcher
 由 `BrowserStore.normalizeInput()` 判断：已有 `http(s)://` 前缀直接用；形如 `example.com` 的
 补一个 `https://`；其它一律当成关键词交给必应搜索。
 
+### 本地视频：桌面式侧边栏 + 缩略图网格 + 内嵌播放
+
+`ui/apps/VideoApp.kt` 是专门按「桌面 UI 布局」设计的——平板/大屏横屏可用空间很大，不适合照搬
+手机上那种单列列表，而是仿照 Finder/Photos 式的经典布局：左侧一条「全部视频 + 按相册/文件夹
+分组」的侧边栏，右侧是 `LazyVerticalGrid(columns = GridCells.Adaptive(...))` 缩略图网格——窗口
+拖得越大，一行自动摆的列数越多，充分利用横向空间；顶部工具栏有搜索框和排序菜单（按修改时间/
+名称/大小）。点开一个视频会切到内嵌的播放界面（`androidx.media3.ui.PlayerView` + `ExoPlayer`，
+自带播放/暂停/进度条控件），不会跳到系统里别的播放器 App。
+
+数据来源是 `data/video/VideoLibraryRepository.kt`，查询系统 `MediaStore.Video.Media`——这是
+官方推荐的"读相册里有什么"的方式，只需要一个普通运行时权限（`READ_MEDIA_VIDEO`，Android 13
+以下退回 `READ_EXTERNAL_STORAGE`，和壁纸共用同一条权限声明），不用像文件管理器那样申请
+`MANAGE_EXTERNAL_STORAGE` 这种要跳系统设置页的重量级权限。缩略图通过
+`ContentResolver.loadThumbnail`（Android 10+）生成并用 `LruCache` 缓存，列表/缩略图读取和文件
+管理器一样，都用 MVI（`mvi/VideoContract.kt` + `mvi/VideoStore.kt`）管理，播放器本身（太大、
+不该被随意复制比较）不进 State，和浏览器里 WebView 的处理思路一致。
+
 ### 不会影响什么
 
 这一整块都是纯增量——桌面网格、Dock、状态栏、控制中心、文件夹卡片、Shizuku 自由窗口的外观和
-交互都没有改动；`FloatingAppType`/`FloatingWindowEntry`/`FloatingWindow` 这套命名也刻意避开了
+交互都没有改动（新增的「视频」图标被放在「影音」分类页，不占用、不改动主页面的既有布局）；
+`FloatingAppType`/`FloatingWindowEntry`/`FloatingWindow` 这套命名也刻意避开了
 `WindowMode`/`WindowRect`/`AppWindow`（Shizuku 那套既有类型），两套机制在代码里不会互相串线。
 
 ## 构建
@@ -460,7 +479,9 @@ python3 tools/convert_web_to_android.py ../ios.25pan.com.zip
 **自由窗口**（Shizuku + `am start --windowingMode 5`，见上面「自由窗口」一节，失败自动降级全屏）、
 **内置文件管理器**（真实读写手机存储：新建/删除/重命名/复制/移动，见「内置小程序」一节）、
 **内置浏览器**（真实 WebView，多标签页 + 书签 + 历史记录，同上一节）、
-**纯 Compose 悬浮窗口**（文件管理器/浏览器专用，标题栏拖拽移动 + 四边四角自由缩放 +
+**内置本地视频小程序**（MediaStore 扫描全机视频，桌面式侧边栏 + 缩略图网格布局，内嵌
+ExoPlayer 播放，同上一节）、
+**纯 Compose 悬浮窗口**（文件管理器/浏览器/本地视频专用，标题栏拖拽移动 + 四边四角自由缩放 +
 一键最大化还原，和 Shizuku 自由窗口是两套独立机制，互不依赖）。
 
 未实现（有意留白）：图标拖拽排序（当前是删除/添加，位置由 `LayoutEngine` 自动打包）、

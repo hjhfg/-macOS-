@@ -43,7 +43,7 @@ import com.ios25pan.launcher.util.SafeMode
  * | 2 | `WindowShelf.kt` 的 `WindowShelf()` | 正在以自由窗口打开的 App 列表（没有打开时不显示） |
  * | 2 | `Desktop.kt` 的 `Desktop()` | 中间：可横滑翻页的图标网格 + 翻页小圆点 |
  * | 2 | `Dock.kt` 的 `Dock()` | 底部一条：常驻的几个图标 |
- * | 2.5 | `ui/window/FloatingWindowHost.kt` 的 `FloatingWindowHost()` | 文件管理器/浏览器的浮动窗口 |
+ * | 2.5 | `ui/window/FloatingWindowHost.kt` 的 `FloatingWindowHost()` | 文件管理器/浏览器/视频的浮动窗口 |
  * | 3 | `FolderOverlay.kt` 的 `FolderOverlay()` | 点开文件夹时盖上来的卡片 |
  * | 3 | `ControlCenter.kt` 的 `ControlCenter()` | 控制中心面板（亮度/音量/壁纸…） |
  * | 3（最上层） | `WidgetPicker.kt` 的 `WidgetPicker()` | 选小组件的弹窗 |
@@ -70,6 +70,7 @@ fun HomeScreen(
     onPickCustomWallpaper: () -> Unit,
     onPickVideoWallpaper: () -> Unit,
     onRequestFilesAccess: () -> Unit,
+    onRequestVideoAccess: () -> Unit,
 ) {
     // collectAsStateWithLifecycle：订阅 HomeStore 的状态流，且在 App 退到后台时自动暂停订阅，
     // 回到前台再恢复——比裸的 collectAsState 更省电，是 Google 官方推荐的标准写法。
@@ -125,7 +126,7 @@ fun HomeScreen(
     // PARALLAX_SHIFT_DP 定义在 Wallpaper.kt 里（同一个包，不需要 import）。
     val density = LocalDensity.current
     val parallaxPx = with(density) { PARALLAX_SHIFT_DP.toPx() }
-    // 浮动窗口（文件管理器/浏览器）的拖拽缩放全程用像素运算，这里把屏幕宽高也换算成像素，
+    // 浮动窗口（文件管理器/浏览器/视频）的拖拽缩放全程用像素运算，这里把屏幕宽高也换算成像素，
     // 传给 FloatingWindowHost 做"不能被拖出屏幕"的边界判断，见 ui/window/FloatingWindow.kt。
     val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
     val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
@@ -165,7 +166,7 @@ fun HomeScreen(
             Dock(items = state.desktop.dock, store = store, hazeState = hazeState, expanded = expanded)
         }
 
-        // 第 2.5 层：内置小程序（文件管理器/浏览器）的浮动窗口——盖在桌面/Dock 之上，
+        // 第 2.5 层：内置小程序（文件管理器/浏览器/视频）的浮动窗口——盖在桌面/Dock 之上，
         // 但盖在下面第 3 层的文件夹卡片/控制中心/小组件选择器之下（那几个算系统级浮层，
         // 优先级更高，和真实 macOS 里"控制中心永远盖在普通 App 窗口上面"是一个道理）。
         FloatingWindowHost(
@@ -176,6 +177,7 @@ fun HomeScreen(
             onFocus = { store.dispatch(HomeIntent.FocusFloatingWindow(it)) },
             onClose = { store.dispatch(HomeIntent.CloseFloatingWindow(it)) },
             onRequestFilesAccess = onRequestFilesAccess,
+            onRequestVideoAccess = onRequestVideoAccess,
         )
 
         // 第 3 层：三个互相独立的浮层。文件夹这里额外记了"最后打开的是哪个文件夹"，

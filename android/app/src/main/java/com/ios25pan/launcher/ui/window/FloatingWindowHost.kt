@@ -3,6 +3,7 @@ package com.ios25pan.launcher.ui.window
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -10,6 +11,7 @@ import com.ios25pan.launcher.domain.FloatingAppType
 import com.ios25pan.launcher.domain.FloatingWindowEntry
 import com.ios25pan.launcher.ui.apps.BrowserApp
 import com.ios25pan.launcher.ui.apps.FileManagerApp
+import com.ios25pan.launcher.ui.apps.VideoApp
 import dev.chrisbanes.haze.HazeState
 
 /**
@@ -35,6 +37,7 @@ fun FloatingWindowHost(
     onFocus: (String) -> Unit,
     onClose: (String) -> Unit,
     onRequestFilesAccess: () -> Unit,
+    onRequestVideoAccess: () -> Unit,
 ) {
     windows.forEachIndexed { index, entry ->
         key(entry.id) {
@@ -58,6 +61,7 @@ fun FloatingWindowHost(
                 when (entry.type) {
                     FloatingAppType.FILES -> FileManagerApp(onRequestAccess = onRequestFilesAccess)
                     FloatingAppType.BROWSER -> BrowserApp()
+                    FloatingAppType.VIDEO -> VideoApp(onRequestAccess = onRequestVideoAccess)
                 }
             }
         }
@@ -67,11 +71,13 @@ fun FloatingWindowHost(
 private fun titleFor(type: FloatingAppType): String = when (type) {
     FloatingAppType.FILES -> "文件"
     FloatingAppType.BROWSER -> "浏览器"
+    FloatingAppType.VIDEO -> "视频"
 }
 
 private fun iconFor(type: FloatingAppType): ImageVector = when (type) {
     FloatingAppType.FILES -> Icons.Filled.Folder
     FloatingAppType.BROWSER -> Icons.Filled.Public
+    FloatingAppType.VIDEO -> Icons.Filled.VideoLibrary
 }
 
 /** 第几个打开的窗口，相对屏幕左上角偏移多少像素——让连续打开的几个窗口不会完全叠在一起。 */

@@ -956,6 +956,21 @@
       "order": 62
     },
     {
+      "id": "app-25",
+      "zone": "page",
+      "page": 4,
+      "parentId": null,
+      "type": "APP",
+      "title": "视频",
+      "action": "role:video",
+      "icon": "ic_ios_video",
+      "row": 1,
+      "col": 1,
+      "rowSpan": 1,
+      "colSpan": 1,
+      "order": 63
+    },
+    {
       "id": "dock:app-1",
       "zone": "dock",
       "page": 0,

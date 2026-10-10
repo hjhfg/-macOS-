@@ -59,10 +59,11 @@ class LaunchItemUseCase @Inject constructor(
         }
     }
 
-    /** “role:files”“role:browser”对应启动器自己实现的内置小程序；其它角色都走外部 App。 */
+    /** “role:files”“role:browser”“role:video”对应启动器自己实现的内置小程序；其它角色都走外部 App。 */
     private fun virtualAppForRole(role: String): FloatingAppType? = when (role) {
         "files" -> FloatingAppType.FILES
         "browser" -> FloatingAppType.BROWSER
+        "video" -> FloatingAppType.VIDEO
         else -> null
     }
 
