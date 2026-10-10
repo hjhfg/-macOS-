@@ -18,6 +18,16 @@ abstract class LauncherDatabase : RoomDatabase() {
         fun build(context: Context): LauncherDatabase =
             Room.databaseBuilder(context, LauncherDatabase::class.java, "launcher.db")
                 .addCallback(SeedCallback(context.applicationContext))
+                // 这是启动器自己的桌面布局表，不是不可再生的用户文档——真出现"旧安装包建的表
+                // 结构和当前代码的 Entity 对不上"（比如开发过程中改过字段但忘了同步 version 号），
+                // 没有这一行 Room 会直接抛 IllegalStateException 崩给用户看，而且是"一打开就崩、
+                // 永远进不了桌面"这种最糟糕的崩法——作为 HOME 应用，这意味着用户连设置里换回
+                // 别的桌面都要多绕一步。加上它之后，遇到这种情况就老老实实删表重建，重建后
+                // SeedCallback.onCreate 会重新从 desktop_seed.json 灌一遍默认布局，用户顶多是
+                // 自己拖动过的图标位置丢了，而不是直接打不开。
+                // Room 2.7 起无参的 fallbackToDestructiveMigration() 已过时，
+                // 改用带显式参数的版本（dropAllTables=true：旧表结构对不上就整个删掉重建）。
+                .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
     }
 }
