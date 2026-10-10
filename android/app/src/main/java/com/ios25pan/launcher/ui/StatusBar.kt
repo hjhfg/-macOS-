@@ -86,6 +86,11 @@ fun StatusBar(
         horizontalArrangement = Arrangement.SpaceBetween, // 时间靠左、按钮靠右，两端对齐
     ) {
         Text(text = time, color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        // 信号/WiFi + 电池：对应网页端状态栏右侧那一排图标，见 StatusBarIcons.kt 顶部说明。
+        // 编辑态下这里让位给"添加小组件/完成"两个按钮，和网页端一样编辑时不展示系统信息区。
+        if (!editing) {
+            StatusBarSystemIcons(modifier = Modifier.padding(end = 10.dp))
+        }
         if (editing) {
             IconButton(onClick = onOpenWidgetPicker) {
                 Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_widget), tint = Color.White)

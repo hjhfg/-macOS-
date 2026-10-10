@@ -1044,6 +1044,21 @@
       "rowSpan": 1,
       "colSpan": 1,
       "order": 4
+    },
+    {
+      "id": "dock:app-recycle",
+      "zone": "dock",
+      "page": 0,
+      "parentId": null,
+      "type": "APP",
+      "title": "回收站",
+      "action": "role:recycle",
+      "icon": "recycle",
+      "row": 0,
+      "col": 0,
+      "rowSpan": 1,
+      "colSpan": 1,
+      "order": 5
     }
   ]
 }

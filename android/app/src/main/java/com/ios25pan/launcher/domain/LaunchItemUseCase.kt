@@ -59,11 +59,19 @@ class LaunchItemUseCase @Inject constructor(
         }
     }
 
-    /** “role:files”“role:browser”“role:video”对应启动器自己实现的内置小程序；其它角色都走外部 App。 */
+    /**
+     * “role:files”“role:browser”“role:video”对应启动器自己实现的内置小程序；其它角色都走外部 App。
+     *
+     * “role:recycle”（Dock 上的回收站图标，对应网页端固定在 Dock 里的回收站）目前先指向内置
+     * 文件管理器：网页端的回收站是"云盘里删除的文件先进回收站、可以恢复"，这一整套需要单独的
+     * 软删除存储和恢复界面，属于一个独立的新功能，不是这次"把 Dock 图标补齐"要做的范围——
+     * 先保证点了有反应、能用，等真的要做回收站功能时再把这一行换成专门的 FloatingAppType。
+     */
     private fun virtualAppForRole(role: String): FloatingAppType? = when (role) {
         "files" -> FloatingAppType.FILES
         "browser" -> FloatingAppType.BROWSER
         "video" -> FloatingAppType.VIDEO
+        "recycle" -> FloatingAppType.FILES
         else -> null
     }
 

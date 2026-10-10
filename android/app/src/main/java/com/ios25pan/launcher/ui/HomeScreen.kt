@@ -23,6 +23,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.chrisbanes.haze.rememberHazeState
 import com.ios25pan.launcher.domain.GridSpec
+import com.ios25pan.launcher.domain.ItemType
 import com.ios25pan.launcher.domain.WidgetProvider
 import com.ios25pan.launcher.mvi.HomeEffect
 import com.ios25pan.launcher.mvi.HomeIntent
@@ -80,6 +81,9 @@ fun HomeScreen(
     // 降级开关：如果毛玻璃模糊曾经导致过崩溃（见 SafeMode 的说明），这里就先不带模糊跑一次，
     // 保证用户至少能回到桌面，而不是陷入"一开App就崩溃"的死循环。
     var blurDisabled by remember { mutableStateOf(SafeMode.blurDisabled()) }
+    // 全局搜索面板的开关——纯 UI 态，不需要放进 HomeStore 的 state 里（不需要跨配置变更保留，
+    // 退出 App 也不需要记住"搜索面板是开着的"）。
+    var searchOpen by remember { mutableStateOf(false) }
     // 全屏共用同一个模糊"取景框"：壁纸只需要被截一次屏，Dock/控制中心/文件夹面板都从这一份
     // 截图里各自裁一块出来模糊，而不是每个面板各截一次（那样性能会差很多）。
     val hazeState = rememberHazeState(blurEnabled = !blurDisabled)
@@ -110,6 +114,15 @@ fun HomeScreen(
     // 也需要读它，两边必须共享同一个实例。
     val pages = state.desktop.pages
     val pagerState = rememberPagerState(pageCount = { pages.size })
+
+    // 给 SearchOverlay 用的"拍平"列表：所有页面格子里的元素 + 全部文件夹内部的元素，
+    // 去掉分隔线（DIVIDER 不是真正的 App，搜索它没有意义）。只在桌面数据真的变化时
+    // 才重新拍平一次，不会每次重组都重新算。
+    val allSearchableItems = remember(state.desktop) {
+        val fromPages = pages.flatMap { page -> page.slots.map { it.item } }
+        val fromFolders = state.desktop.folders.values.flatten()
+        (fromPages + fromFolders).filter { it.type != ItemType.DIVIDER }
+    }
 
     // 两个方向都要同步：用户手指滑动 -> 告诉 Store "翻到第几页了"；
     // Store 的页码被别处改动（比如删除图标导致页数变化）-> 让翻页器自己滚过去。
@@ -164,6 +177,9 @@ fun HomeScreen(
             )
 
             Dock(items = state.desktop.dock, store = store, hazeState = hazeState, expanded = expanded)
+
+            // 网页端 Dock 下面还有一条"搜索胶囊 + 上滑指示条"，见 BottomGestureBar.kt 顶部说明。
+            BottomGestureBar(onSearchClick = { searchOpen = true })
         }
 
         // 第 2.5 层：内置小程序（文件管理器/浏览器/视频）的浮动窗口——盖在桌面/Dock 之上，
@@ -228,5 +244,16 @@ fun HomeScreen(
                 onDismiss = { store.dispatch(HomeIntent.SetWidgetPicker(false)) },
             )
         }
+
+        // 点击 BottomGestureBar 里的"搜索"弹出来的全局搜索面板，见 SearchOverlay.kt 顶部说明。
+        // 搜索范围是"拍平"之后的全部桌面元素（所有页面的格子 + 全部文件夹内部），
+        // 不是只搜当前这一页——这点和网页端的全局搜索行为一致。
+        SearchOverlay(
+            visible = searchOpen,
+            allItems = allSearchableItems,
+            onDismiss = { searchOpen = false },
+            onItemClick = { store.dispatch(HomeIntent.Tap(it)) },
+            store = store,
+        )
     }
 }

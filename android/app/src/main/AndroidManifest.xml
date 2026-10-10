@@ -30,6 +30,13 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!--
+      状态栏要画"当前是 WiFi 还是移动数据"的图标（对应网页端状态栏右上角那一排信号/WiFi 图标），
+      需要用 ConnectivityManager 查询当前网络类型。这是普通权限（Normal permission），
+      装的时候系统自动授予，不会弹运行时权限对话框，用户无感。
+    -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
       文件管理器要能浏览/增删改查"/storage/emulated/0/任意目录"，不是只看自己的专属目录：
       - Android 11+（API 30+）：用 MANAGE_EXTERNAL_STORAGE（"所有文件访问权限"），
         这是特殊权限，不走运行时弹窗，要在系统设置页手动开（见 MainActivity#requestFilesAccess）；
