@@ -17,15 +17,25 @@ package com.ios25pan.launcher.domain
  * Haze 的 RenderNode 快照能看到它；如果用默认的 `SURFACE_TYPE_SURFACE_VIEW`，
  * 画面走独立的硬件图层合成，Haze（以及任何基于 RenderEffect 的模糊）都看不见这一层。
  *
- * 默认是 [SYSTEM]：既用原手机壁纸，又保住了毛玻璃。想要系统动态壁纸真的动起来就切 [LIVE]，
- * 代价是玻璃退化为半透明材质（Haze 在没有源内容时不会崩，只是没有模糊可采）；
+ * 默认是 [PRESET]（固定用 ios.25pan.com 网站自带的那张默认壁纸，见 [WALLPAPER_PRESETS]
+ * 的注释），保证刚装好、什么都没手动设置时跟原网页看起来一致，同时也保住了毛玻璃。
+ * 想用回这台设备本来的系统壁纸就在控制中心切成 [SYSTEM]；想要系统动态壁纸真的动起来就切
+ * [LIVE]，代价是玻璃退化为半透明材质（Haze 在没有源内容时不会崩，只是没有模糊可采）；
  * 想要视频壁纸还想保住毛玻璃，用 [VIDEO]。
  */
 enum class WallpaperMode { SYSTEM, LIVE, PRESET, CUSTOM, VIDEO }
 
-/** 打包进 APK 的几张内置壁纸（转换脚本从网页端导出的）。 */
+/**
+ * 打包进 APK 的几张内置壁纸（转换脚本从网页端导出的）。
+ *
+ * 顺序本身有意义："wallpaper_t01f2b8957f4c756004" 排在第一位——它是原网站
+ * ios.25pan.com 打开后默认显示的那张经典蓝色壁纸（已逐字节比对过，和 zip 包里
+ * wallpaper/t01f2b8957f4c756004.PNG 完全一致）。[WallpaperRepository.presetResId]
+ * 在用户还没手动选过壁纸时会退回 [WALLPAPER_PRESETS.first]，所以这里排第一位
+ * 直接决定了"刚装好 App、什么都没设置"时看到的默认壁纸是不是跟网站一致。
+ */
 val WALLPAPER_PRESETS = listOf(
+    "wallpaper_t01f2b8957f4c756004",
     "wallpaper_sunny_night",
     "wallpaper_fog",
-    "wallpaper_t01f2b8957f4c756004",
 )

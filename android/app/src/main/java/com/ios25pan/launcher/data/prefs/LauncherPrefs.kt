@@ -50,8 +50,13 @@ class LauncherPrefs @Inject constructor(@ApplicationContext private val context:
 
     // ---- 外观 ----
 
+    // 默认值选 PRESET 而不是 SYSTEM：这是一个"尽量还原原网页"的启动器，用户没设置过
+    // 壁纸时应该先看到和 ios.25pan.com 一模一样的默认蓝色壁纸（见 WALLPAPER_PRESETS 的
+    // 注释），而不是直接透出这台设备自己的系统壁纸（很多手机/模拟器默认是纯黑，会让人
+    // 以为"App 没套上网站的皮肤、是不是没更新代码"）。用户依然可以在控制中心主动切回
+    // SYSTEM，拿回自己手机原本的壁纸。
     val wallpaperMode: Flow<WallpaperMode> = context.launcherDataStore.data.map {
-        runCatching { WallpaperMode.valueOf(it[wallpaperModeKey] ?: "") }.getOrDefault(WallpaperMode.SYSTEM)
+        runCatching { WallpaperMode.valueOf(it[wallpaperModeKey] ?: "") }.getOrDefault(WallpaperMode.PRESET)
     }.distinctUntilChanged()
 
     val wallpaperUri: Flow<String?> = context.launcherDataStore.data.map { it[wallpaperUriKey] }.distinctUntilChanged()
