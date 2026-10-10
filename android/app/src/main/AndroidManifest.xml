@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- 列出全部已安装应用（启动器属于 Google 允许的用例；侧载自用无需审核） -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+    <!-- 桌面小组件：绑定权限由系统在首次绑定时向用户确认 -->
+    <uses-permission android:name="android.permission.BIND_APPWIDGET" tools:ignore="ProtectedPermissions" />
+
+    <!--
+      读取"原手机的壁纸"用：Android 13 起 WallpaperManager#getDrawable() 必须持有这两个之一才能拿到
+      真实位图（见 WallpaperManagerService#getWallpaperWithFeature 的权限检查），否则系统只给占位图。
+      这不是什么特殊权限，是普通的运行时危险权限，由 Control Center 里切到"系统壁纸"模式时按需申请——
+      不申请 / 被拒绝也不影响使用：退回透明穿透一样能看到真实壁纸，只是不能被毛玻璃模糊。
+    -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+
+    <!--
+      "本地视频"小程序用：Android 13 起读取视频要单独声明 READ_MEDIA_VIDEO（和上面读图片的
+      READ_MEDIA_IMAGES 是两个独立权限，不能共用）；更早的系统版本复用上面那条已经声明过的
+      READ_EXTERNAL_STORAGE（maxSdkVersion=32），不需要重复声明。由
+      `data/video/VideoLibraryRepository.kt#requiredPermission()` 按系统版本挑一个来申请。
+    -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+
+    <!-- 浏览器要用真正的 android.webkit.WebView 加载网页，必须声明联网权限。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      状态栏要画"当前是 WiFi 还是移动数据"的图标（对应网页端状态栏右上角那一排信号/WiFi 图标），
+      需要用 ConnectivityManager 查询当前网络类型。这是普通权限（Normal permission），
+      装的时候系统自动授予，不会弹运行时权限对话框，用户无感。
+    -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+      文件管理器要能浏览/增删改查"/storage/emulated/0/任意目录"，不是只看自己的专属目录：
+      - Android 11+（API 30+）：用 MANAGE_EXTERNAL_STORAGE（"所有文件访问权限"），
+        这是特殊权限，不走运行时弹窗，要在系统设置页手动开（见 MainActivity#requestFilesAccess）；
+      - API 30 以下：退回传统的 WRITE_EXTERNAL_STORAGE 运行时权限（maxSdkVersion=28 封顶，
+        是因为 Android 10 的分区存储过渡期这个权限行为比较模糊，而 Android 11 起已经有
+        上面那个更合适的权限，不需要同时声明两个）。
+    -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <application
+        android:name=".LauncherApp"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Launcher">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:stateNotNeeded="true"
+            android:screenOrientation="userLandscape"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          自由窗口：Shizuku 用它把 shell 身份的 Binder 发给我们进程。这个 provider 本身什么都不做，
+          没装 Shizuku / Sui 时也完全无害——只是 Shizuku 类一直收不到 Binder，功能停在"未就绪"。
+        -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <!--
+          文件管理器打开一个文件时（见 FileManagerRepository.contentUriFor），不能直接把
+          file:// 路径塞进 Intent 丢给别的 App——Android 7.0 起这是安全漏洞，系统会直接抛
+          FileUriExposedException 崩溃。FileProvider 把真实路径包装成一个临时、限时、
+          只读的 content:// Uri，这是官方推荐的标准做法，具体暴露哪些目录见
+          res/xml/file_paths.xml。
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+</manifest>

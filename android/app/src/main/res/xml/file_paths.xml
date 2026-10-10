@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 允许暴露哪些目录给外部 App 访问——这里对应 AndroidManifest.xml 里
+  androidx.core.content.FileProvider 这个 <provider> 的配置。
+
+  <external-path path="." /> 里的 "." 表示 Environment.getExternalStorageDirectory() 的根目录
+  （也就是 FileManagerRepository.rootPath，文件管理器能浏览到的整个范围），这样用户不管在
+  手机存储的哪个角落点开一个文件，FileProvider 都能把它包装成一个合法的 content:// Uri。
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-path name="external_storage_root" path="." />
+</paths>

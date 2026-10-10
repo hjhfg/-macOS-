@@ -1,0 +1,118 @@
+package com.ios25pan.launcher.data.prefs
+
+import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import com.ios25pan.launcher.domain.WallpaperMode
+import com.ios25pan.launcher.domain.WindowMode
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import javax.inject.Inject
+import javax.inject.Singleton
+
+private val Context.launcherDataStore: DataStore<Preferences> by preferencesDataStore(name = "launcher_prefs")
+
+/**
+ * 设置项（DataStore）。
+ *
+ * 存的东西分三类：
+ *  - 桌面内容：用户从桌面移除过的元素（避免被"自动补齐"又出现）
+ *  - 外观：壁纸模式 / 壁纸 URI / 是否强制横屏 / 网格列数
+ *  - 窗口：点击图标时是全屏还是自由窗口，以及每个窗口上次的位置（重开时恢复）
+ */
+@Singleton
+class LauncherPrefs @Inject constructor(@ApplicationContext private val context: Context) {
+
+    private val hiddenKey = stringSetPreferencesKey("hidden_actions")
+    private val wallpaperModeKey = stringPreferencesKey("wallpaper_mode")
+    private val wallpaperUriKey = stringPreferencesKey("wallpaper_uri")
+    private val wallpaperPresetKey = stringPreferencesKey("wallpaper_preset")
+    private val forceLandscapeKey = booleanPreferencesKey("force_landscape")
+    private val gridColsKey = intPreferencesKey("grid_cols")
+    private val gridRowsKey = intPreferencesKey("grid_rows")
+    private val windowModeKey = stringPreferencesKey("window_mode")
+    private val windowBoundsKey = stringSetPreferencesKey("window_bounds")
+
+    val hiddenActions: Flow<Set<String>> =
+        context.launcherDataStore.data.map { it[hiddenKey] ?: emptySet() }.distinctUntilChanged()
+
+    suspend fun hide(action: String) {
+        context.launcherDataStore.edit { p -> p[hiddenKey] = (p[hiddenKey] ?: emptySet()) + action }
+    }
+
+    // ---- 外观 ----
+
+    // 默认值选 PRESET 而不是 SYSTEM：这是一个"尽量还原原网页"的启动器，用户没设置过
+    // 壁纸时应该先看到和 ios.25pan.com 一模一样的默认蓝色壁纸（见 WALLPAPER_PRESETS 的
+    // 注释），而不是直接透出这台设备自己的系统壁纸（很多手机/模拟器默认是纯黑，会让人
+    // 以为"App 没套上网站的皮肤、是不是没更新代码"）。用户依然可以在控制中心主动切回
+    // SYSTEM，拿回自己手机原本的壁纸。
+    val wallpaperMode: Flow<WallpaperMode> = context.launcherDataStore.data.map {
+        runCatching { WallpaperMode.valueOf(it[wallpaperModeKey] ?: "") }.getOrDefault(WallpaperMode.PRESET)
+    }.distinctUntilChanged()
+
+    val wallpaperUri: Flow<String?> = context.launcherDataStore.data.map { it[wallpaperUriKey] }.distinctUntilChanged()
+
+    val wallpaperPreset: Flow<String?> = context.launcherDataStore.data.map { it[wallpaperPresetKey] }.distinctUntilChanged()
+
+    suspend fun setWallpaper(mode: WallpaperMode, uri: String? = null, preset: String? = null) {
+        context.launcherDataStore.edit { p ->
+            p[wallpaperModeKey] = mode.name
+            if (uri != null) p[wallpaperUriKey] = uri
+            if (preset != null) p[wallpaperPresetKey] = preset
+        }
+    }
+
+    /** 平板桌面按横屏设计；关掉后就跟着设备传感器走。 */
+    val forceLandscape: Flow<Boolean> =
+        context.launcherDataStore.data.map { it[forceLandscapeKey] ?: true }.distinctUntilChanged()
+
+    suspend fun setForceLandscape(value: Boolean) {
+        context.launcherDataStore.edit { it[forceLandscapeKey] = value }
+    }
+
+    /** 0 表示跟随屏幕尺寸自动算（见 GridSpec）。 */
+    val gridOverride: Flow<Pair<Int, Int>> = context.launcherDataStore.data.map {
+        it[gridColsKey] ?: 0 to (it[gridRowsKey] ?: 0)
+    }.distinctUntilChanged()
+
+    suspend fun setGridOverride(cols: Int, rows: Int) {
+        context.launcherDataStore.edit {
+            it[gridColsKey] = cols
+            it[gridRowsKey] = rows
+        }
+    }
+
+    // ---- 窗口 ----
+
+    val windowMode: Flow<WindowMode> = context.launcherDataStore.data.map {
+        runCatching { WindowMode.valueOf(it[windowModeKey] ?: "") }.getOrDefault(WindowMode.FULLSCREEN)
+    }.distinctUntilChanged()
+
+    suspend fun setWindowMode(mode: WindowMode) {
+        context.launcherDataStore.edit { it[windowModeKey] = mode.name }
+    }
+
+    /** 组件名 -> 上次窗口位置（"left top right bottom"），重开同一个应用时恢复。 */
+    val windowBounds: Flow<Map<String, String>> = context.launcherDataStore.data.map { prefs ->
+        (prefs[windowBoundsKey] ?: emptySet()).mapNotNull { entry ->
+            val i = entry.indexOf('=')
+            if (i <= 0) null else entry.substring(0, i) to entry.substring(i + 1)
+        }.toMap()
+    }
+
+    suspend fun saveWindowBounds(component: String, bounds: String) {
+        context.launcherDataStore.edit { p ->
+            val set = (p[windowBoundsKey] ?: emptySet()).filterNot { it.startsWith("$component=") }.toSet()
+            p[windowBoundsKey] = set + "$component=$bounds"
+        }
+    }
+}

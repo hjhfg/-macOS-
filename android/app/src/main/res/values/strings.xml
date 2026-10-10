@@ -1,0 +1,43 @@
+<resources>
+    <string name="app_name">iOS 桌面</string>
+    <string name="app_not_installed">未找到对应应用，请先安装</string>
+    <string name="folder_default_name">文件夹</string>
+    <string name="edit_done">完成</string>
+    <string name="add_widget">添加小组件</string>
+    <string name="control_center">控制中心</string>
+    <string name="widget_no_providers">没有可用的小组件</string>
+    <string name="widget_bind_denied">系统拒绝了小组件绑定</string>
+    <string name="toggle_network">网络</string>
+    <string name="toggle_bluetooth">蓝牙</string>
+    <string name="toggle_nfc">NFC</string>
+    <string name="volume_title">音量</string>
+    <string name="brightness">亮度</string>
+    <string name="volume_music">媒体</string>
+    <string name="volume_ring">铃声</string>
+    <string name="volume_alarm">闹钟</string>
+    <string name="remove_item">移除</string>
+    <string name="crash_log_title">上次崩溃</string>
+    <string name="crash_log_entry">崩溃日志</string>
+    <string name="crash_log_copy">复制</string>
+    <string name="crash_log_clear">清除</string>
+    <string name="glass_blur">毛玻璃模糊</string>
+    <string name="force_landscape">强制横屏（平板模式）</string>
+
+    <string name="window_mode">窗口模式</string>
+    <string name="window_mode_fullscreen">全屏打开应用</string>
+    <string name="window_mode_freeform">自由窗口打开应用</string>
+    <string name="window_fallback">自由窗口不可用，已改为全屏打开</string>
+    <string name="shizuku_not_running">需要安装并启动 Shizuku 才能用自由窗口</string>
+    <string name="shizuku_not_granted">Shizuku 已启动，还差一步授权</string>
+    <string name="shizuku_ready">Shizuku 已就绪</string>
+    <string name="shizuku_grant">去授权</string>
+    <string name="window_diagnose">诊断</string>
+
+    <string name="wallpaper">壁纸</string>
+    <string name="wallpaper_system">系统壁纸</string>
+    <string name="wallpaper_custom">选择图片</string>
+    <string name="wallpaper_video">选择视频</string>
+    <string name="wallpaper_system_picker">更换系统壁纸…</string>
+    <string name="wallpaper_permission_hint">当前显示的是真实壁纸的穿透效果，暂不支持毛玻璃模糊；授权相册权限或选一张自定义图片即可开启模糊</string>
+    <string name="wallpaper_custom_failed">读取素材失败，请换一个文件再试</string>
+</resources>

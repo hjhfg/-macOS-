@@ -1,0 +1,15 @@
+<resources>
+    <style name="Theme.Launcher" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowFullscreen">false</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <!--
+          壁纸穿透模式（WallpaperRender.Transparent）下，Compose 内容本身不画任何东西，
+          真正要露出来的是窗口背后的系统壁纸层（FLAG_SHOW_WALLPAPER）。
+          如果 windowBackground 是不透明的，它会先把壁纸层盖住，穿透就白做了。
+        -->
+        <item name="android:windowBackground">@null</item>
+    </style>
+</resources>
