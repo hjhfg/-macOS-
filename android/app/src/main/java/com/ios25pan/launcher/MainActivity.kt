@@ -2,8 +2,10 @@ package com.ios25pan.launcher
 
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -14,6 +16,8 @@ import androidx.activity.viewModels
 import androidx.lifecycle.lifecycleScope
 import com.ios25pan.launcher.data.widget.WidgetRepository
 import com.ios25pan.launcher.domain.WidgetProvider
+import com.ios25pan.launcher.mvi.FileManagerIntent
+import com.ios25pan.launcher.mvi.FileManagerStore
 import com.ios25pan.launcher.mvi.HomeIntent
 import com.ios25pan.launcher.mvi.HomeStore
 import com.ios25pan.launcher.ui.HomeScreen
@@ -35,6 +39,11 @@ class MainActivity : ComponentActivity() {
 
     // 与 Compose 中的 hiltViewModel() 是同一个实例（ViewModelStoreOwner 都是本 Activity）
     private val store: HomeStore by viewModels()
+
+    /** 文件管理器的 Store——同样跟 Compose 里 `hiltViewModel()` 拿到的是同一个实例。
+     * Activity 这边需要它，是因为"去系统设置开权限"这件事必须由 Activity 发起
+     * （`FileManagerApp.kt` 自己拿不到 Activity 的 `startActivity`/权限请求能力）。 */
+    private val fileManagerStore: FileManagerStore by viewModels()
 
     /** 等待系统绑定确认的小组件：绑定页不返回结果数据，只能回来对账。 */
     private var pendingWidget: Pair<Int, WidgetProvider>? = null
@@ -67,6 +76,37 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
         if (uri != null) store.dispatch(HomeIntent.PickedVideoWallpaper(uri.toString()))
+    }
+
+    /**
+     * Android 11（API 30）以下的"所有文件访问权限"退回传统运行时权限弹窗，
+     * 用这个 launcher 申请 `WRITE_EXTERNAL_STORAGE`；API 30+ 走的是跳系统设置页那条路
+     * （见下面 [requestFilesAccess]），不会用到这个 launcher。
+     */
+    private val filesPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        fileManagerStore.dispatch(FileManagerIntent.RecheckAccess)
+    }
+
+    /**
+     * 引导用户授予"所有文件访问权限"：
+     * - Android 11+（API 30+）：这个权限级别太高，系统不允许用普通的运行时权限弹窗申请，
+     *   必须跳到一个专门的系统设置页，用户手动点开关；
+     * - 更低版本：退回普通的 `WRITE_EXTERNAL_STORAGE` 运行时权限弹窗即可。
+     * 两条路径走完之后具体有没有真的被允许，统一等 [onResume] 里重新判定，这里不关心结果。
+     */
+    private fun requestFilesAccess() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:$packageName"),
+            )
+            runCatching { startActivity(intent) }
+                .onFailure { startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+        } else {
+            filesPermissionLauncher.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -126,6 +166,7 @@ class MainActivity : ComponentActivity() {
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
                         )
                     },
+                    onRequestFilesAccess = { requestFilesAccess() },
                 )
             }
         }
@@ -141,6 +182,8 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         // 用户可能刚从系统设置换了壁纸，或者刚在权限弹窗里点了允许——回来就重新判定一次。
         store.dispatch(HomeIntent.RefreshWallpaper)
+        // 同理：用户可能刚从"所有文件访问权限"设置页回来，重新判断一次文件管理器的权限状态。
+        fileManagerStore.dispatch(FileManagerIntent.RecheckAccess)
     }
 
     override fun onStop() {

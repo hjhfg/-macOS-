@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.chrisbanes.haze.rememberHazeState
@@ -26,6 +27,7 @@ import com.ios25pan.launcher.domain.WidgetProvider
 import com.ios25pan.launcher.mvi.HomeEffect
 import com.ios25pan.launcher.mvi.HomeIntent
 import com.ios25pan.launcher.mvi.HomeStore
+import com.ios25pan.launcher.ui.window.FloatingWindowHost
 import com.ios25pan.launcher.util.SafeMode
 
 /**
@@ -41,6 +43,7 @@ import com.ios25pan.launcher.util.SafeMode
  * | 2 | `WindowShelf.kt` 的 `WindowShelf()` | 正在以自由窗口打开的 App 列表（没有打开时不显示） |
  * | 2 | `Desktop.kt` 的 `Desktop()` | 中间：可横滑翻页的图标网格 + 翻页小圆点 |
  * | 2 | `Dock.kt` 的 `Dock()` | 底部一条：常驻的几个图标 |
+ * | 2.5 | `ui/window/FloatingWindowHost.kt` 的 `FloatingWindowHost()` | 文件管理器/浏览器的浮动窗口 |
  * | 3 | `FolderOverlay.kt` 的 `FolderOverlay()` | 点开文件夹时盖上来的卡片 |
  * | 3 | `ControlCenter.kt` 的 `ControlCenter()` | 控制中心面板（亮度/音量/壁纸…） |
  * | 3（最上层） | `WidgetPicker.kt` 的 `WidgetPicker()` | 选小组件的弹窗 |
@@ -66,6 +69,7 @@ fun HomeScreen(
     onRequestWallpaperPermission: () -> Unit,
     onPickCustomWallpaper: () -> Unit,
     onPickVideoWallpaper: () -> Unit,
+    onRequestFilesAccess: () -> Unit,
 ) {
     // collectAsStateWithLifecycle：订阅 HomeStore 的状态流，且在 App 退到后台时自动暂停订阅，
     // 回到前台再恢复——比裸的 collectAsState 更省电，是 Google 官方推荐的标准写法。
@@ -119,7 +123,12 @@ fun HomeScreen(
 
     // dp 转像素：graphicsLayer 系列 API 只认像素，不认 dp，这个换算只需要做一次。
     // PARALLAX_SHIFT_DP 定义在 Wallpaper.kt 里（同一个包，不需要 import）。
-    val parallaxPx = with(LocalDensity.current) { PARALLAX_SHIFT_DP.toPx() }
+    val density = LocalDensity.current
+    val parallaxPx = with(density) { PARALLAX_SHIFT_DP.toPx() }
+    // 浮动窗口（文件管理器/浏览器）的拖拽缩放全程用像素运算，这里把屏幕宽高也换算成像素，
+    // 传给 FloatingWindowHost 做"不能被拖出屏幕"的边界判断，见 ui/window/FloatingWindow.kt。
+    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
+    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 第 1 层：壁纸（见 Wallpaper.kt）
@@ -155,6 +164,19 @@ fun HomeScreen(
 
             Dock(items = state.desktop.dock, store = store, hazeState = hazeState, expanded = expanded)
         }
+
+        // 第 2.5 层：内置小程序（文件管理器/浏览器）的浮动窗口——盖在桌面/Dock 之上，
+        // 但盖在下面第 3 层的文件夹卡片/控制中心/小组件选择器之下（那几个算系统级浮层，
+        // 优先级更高，和真实 macOS 里"控制中心永远盖在普通 App 窗口上面"是一个道理）。
+        FloatingWindowHost(
+            windows = state.floatingWindows,
+            hazeState = hazeState,
+            screenWidthPx = screenWidthPx,
+            screenHeightPx = screenHeightPx,
+            onFocus = { store.dispatch(HomeIntent.FocusFloatingWindow(it)) },
+            onClose = { store.dispatch(HomeIntent.CloseFloatingWindow(it)) },
+            onRequestFilesAccess = onRequestFilesAccess,
+        )
 
         // 第 3 层：三个互相独立的浮层。文件夹这里额外记了"最后打开的是哪个文件夹"，
         // 是因为退出动画播放期间 openFolderId 已经变回 null 了，但画面上还得继续显示

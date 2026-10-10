@@ -7,6 +7,8 @@ import com.ios25pan.launcher.data.window.ShellState
 import com.ios25pan.launcher.domain.AppWindow
 import com.ios25pan.launcher.domain.Desktop
 import com.ios25pan.launcher.domain.DesktopItem
+import com.ios25pan.launcher.domain.FloatingAppType
+import com.ios25pan.launcher.domain.FloatingWindowEntry
 import com.ios25pan.launcher.domain.WallpaperMode
 import com.ios25pan.launcher.domain.WidgetProvider
 import com.ios25pan.launcher.domain.WindowMode
@@ -34,10 +36,16 @@ sealed interface HomeIntent {
     /** 屏幕可用尺寸变化（旋转 / 折叠展开）：驱动网格列数重新计算，平板横屏才能摆下更多图标。 */
     data class ScreenSizeChanged(val widthDp: Int, val heightDp: Int) : HomeIntent
 
-    // ---- 窗口 ----
+    // ---- 窗口（系统级自由窗口：Shizuku 拉起的外部真实 App，见 WindowRepository） ----
     data class SetWindowMode(val mode: WindowMode) : HomeIntent
     data class CloseWindow(val component: String) : HomeIntent
     data class FocusWindow(val component: String) : HomeIntent
+
+    // ---- 内置小程序的浮动窗口（文件管理器 / 浏览器，启动器自己用 Compose 画的界面） ----
+    /** 打开一个内置小程序；如果它已经开着了，只是把它提到最前面，不会开出第二个窗口。 */
+    data class OpenFloatingApp(val type: FloatingAppType) : HomeIntent
+    data class FocusFloatingWindow(val id: String) : HomeIntent
+    data class CloseFloatingWindow(val id: String) : HomeIntent
 
     // ---- 壁纸 / 外观 ----
     data class SetWallpaperMode(val mode: WallpaperMode) : HomeIntent
@@ -62,6 +70,8 @@ data class HomeState(
     val shellState: ShellState = ShellState.NOT_RUNNING,
     val wallpaper: WallpaperRender = WallpaperRender.Transparent,
     val forceLandscape: Boolean = true,
+    /** 当前开着的内置小程序浮动窗口；列表顺序就是层叠顺序，最后一个在最上面。 */
+    val floatingWindows: List<FloatingWindowEntry> = emptyList(),
 )
 
 sealed interface HomeEffect {

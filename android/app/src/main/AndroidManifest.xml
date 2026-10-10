@@ -18,6 +18,24 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
+    <!-- 浏览器要用真正的 android.webkit.WebView 加载网页，必须声明联网权限。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      文件管理器要能浏览/增删改查"/storage/emulated/0/任意目录"，不是只看自己的专属目录：
+      - Android 11+（API 30+）：用 MANAGE_EXTERNAL_STORAGE（"所有文件访问权限"），
+        这是特殊权限，不走运行时弹窗，要在系统设置页手动开（见 MainActivity#requestFilesAccess）；
+      - API 30 以下：退回传统的 WRITE_EXTERNAL_STORAGE 运行时权限（maxSdkVersion=28 封顶，
+        是因为 Android 10 的分区存储过渡期这个权限行为比较模糊，而 Android 11 起已经有
+        上面那个更合适的权限，不需要同时声明两个）。
+    -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
     <application
         android:name=".LauncherApp"
         android:allowBackup="true"
@@ -53,5 +71,22 @@
             android:enabled="true"
             android:exported="true"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <!--
+          文件管理器打开一个文件时（见 FileManagerRepository.contentUriFor），不能直接把
+          file:// 路径塞进 Intent 丢给别的 App——Android 7.0 起这是安全漏洞，系统会直接抛
+          FileUriExposedException 崩溃。FileProvider 把真实路径包装成一个临时、限时、
+          只读的 content:// Uri，这是官方推荐的标准做法，具体暴露哪些目录见
+          res/xml/file_paths.xml。
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

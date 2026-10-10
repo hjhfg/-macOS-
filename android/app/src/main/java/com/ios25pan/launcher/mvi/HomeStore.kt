@@ -15,6 +15,8 @@ import com.ios25pan.launcher.data.widget.WidgetRepository
 import com.ios25pan.launcher.data.window.WindowRepository
 import com.ios25pan.launcher.domain.BuildDesktopUseCase
 import com.ios25pan.launcher.domain.DesktopItem
+import com.ios25pan.launcher.domain.FloatingAppType
+import com.ios25pan.launcher.domain.FloatingWindowEntry
 import com.ios25pan.launcher.domain.GridSpec
 import com.ios25pan.launcher.domain.ItemType
 import com.ios25pan.launcher.domain.LaunchItemUseCase
@@ -131,6 +133,12 @@ class HomeStore @Inject constructor(
             providers = if (i.open) s.providers else emptyList(),
         )
         is HomeIntent.ProvidersLoaded -> s.copy(providers = i.providers)
+
+        // ---- 内置小程序的浮动窗口：纯粹是"一个列表该长什么样"，不需要任何 IO，直接在这里改 ----
+        is HomeIntent.OpenFloatingApp -> s.copy(floatingWindows = openOrFocus(s.floatingWindows, i.type))
+        is HomeIntent.FocusFloatingWindow -> s.copy(floatingWindows = focusById(s.floatingWindows, i.id))
+        is HomeIntent.CloseFloatingWindow -> s.copy(floatingWindows = s.floatingWindows.filterNot { it.id == i.id })
+
         is HomeIntent.Tap, is HomeIntent.Remove, is HomeIntent.ScreenSizeChanged,
         is HomeIntent.PickProvider, is HomeIntent.WidgetBindResult,
         is HomeIntent.SetWindowMode, is HomeIntent.CloseWindow, is HomeIntent.FocusWindow,
@@ -138,6 +146,22 @@ class HomeStore @Inject constructor(
         is HomeIntent.SetWallpaperPreset, is HomeIntent.PickedCustomWallpaper,
         is HomeIntent.PickedVideoWallpaper,
         HomeIntent.RefreshWallpaper, is HomeIntent.SetForceLandscape -> s
+    }
+
+    /**
+     * 打开一个内置小程序：如果同类型的窗口已经在列表里了，只把它挪到列表末尾（= 置顶显示，
+     * 和下面 [focusById] 是同一个"置顶"语义）；没有的话才新建一条记录追加到末尾。
+     * 因为目前文件管理器/浏览器都是单例窗口，这里按 [type] 去重即可，参见 [FloatingWindowEntry] 的说明。
+     */
+    private fun openOrFocus(list: List<FloatingWindowEntry>, type: FloatingAppType): List<FloatingWindowEntry> {
+        val existing = list.find { it.type == type }
+        return if (existing != null) focusById(list, existing.id) else list + FloatingWindowEntry(type.name, type)
+    }
+
+    /** 把某个窗口挪到列表末尾——列表顺序即层叠顺序，末尾 = 盖在最上面。找不到就原样返回。 */
+    private fun focusById(list: List<FloatingWindowEntry>, id: String): List<FloatingWindowEntry> {
+        val target = list.find { it.id == id } ?: return list
+        return list.filterNot { it.id == id } + target
     }
 
     /** 副作用：IO、启动 Activity、系统服务调用。 */
@@ -197,6 +221,7 @@ class HomeStore @Inject constructor(
                 }
                 is LaunchResult.OpenFolder -> dispatch(HomeIntent.OpenFolder(r.folderId))
                 LaunchResult.Windowed -> Unit // 窗口已经由系统画出来了，登记表在 WindowRepository 里已经更新
+                is LaunchResult.OpenVirtualApp -> dispatch(HomeIntent.OpenFloatingApp(r.type))
                 LaunchResult.NotInstalled -> _effects.send(HomeEffect.Toast(R.string.app_not_installed))
                 LaunchResult.None -> Unit
             }

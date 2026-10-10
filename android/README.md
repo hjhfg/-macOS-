@@ -342,6 +342,84 @@ Dock 的 `zIndex` 属于布局阶段、没法延迟读，所以用一个量化�
   multi-window behaviors"）。三星 One UI 有自己的多窗口栈，实测效果以具体 ROM 版本为准；
   所有操作都返回成败，失败就降级，不会卡在中间状态。
 
+## 内置小程序：文件管理器 / 浏览器（纯 Compose 悬浮窗口）
+
+桌面上的「文件」「浏览器」两个图标点一下，不再走 Intent 跳到别的 App——它们是启动器自己用
+Compose 实现的真实功能，以一个可以拖拽、缩放的悬浮卡片窗口形式叠在桌面上面，和上一节的
+Shizuku 自由窗口是两套完全不同的机制，不要混淆：
+
+| | Shizuku 自由窗口 | 本节的悬浮窗口 |
+|---|---|---|
+| 窗口谁来画 | 系统 WM Shell | 我们自己用 Compose 画（`ui/window/FloatingWindow.kt`） |
+| 装的是什么 | 手机上另一个真实安装的 App | 启动器自己实现的界面（文件管理器 / 浏览器） |
+| 依赖 | 需要装 Shizuku 并授权 | 不需要任何额外 App/权限（文件管理器自身的存储权限除外） |
+| 拖拽/缩放手势 | 系统窗口装饰自带 | 自己手写（见下） |
+
+### 窗口本身
+
+`ui/window/FloatingWindow.kt` 是一个通用外壳，不认识里面装的是文件管理器还是浏览器，只接收
+一个 `content: @Composable () -> Unit` 插槽。它实现了：
+
+- 标题栏拖拽移动（`detectDragGestures`，拖动时内部状态直接按像素累加，只有最后摆放的那一刻才
+  换算成 Dp，避免每一帧都做单位转换）；
+- 四条边 + 四个角，一共 8 个透明拖拽热区自由缩放到任意尺寸（只保证不超出屏幕、不小于
+  `MIN_WINDOW_WIDTH`/`MIN_WINDOW_HEIGHT`，没有分档位）；
+- 一键最大化/还原（最大化只是渲染时临时换一套铺满全屏的数字，原来的位置/大小一直记着，
+  点还原立刻变回去）；
+- 一键最小化/展开（"卷起来"只剩标题栏那么高，内容区域仍留在组合树里，WebView/文件列表的状态
+  不会丢，和关闭窗口有本质区别）；
+- 点窗口任意位置置顶（和 `ui/Dock.kt` 放大效果同款的 `PointerEventPass.Initial` 非拦截式监听）。
+
+`ui/window/FloatingWindowHost.kt` 负责"桌面现在该显示哪几个窗口"：读
+`HomeState.floatingWindows`（一个 `FloatingWindowEntry` 列表，顺序即层叠顺序，最后一个在最上面），
+每条记录画一个 `FloatingWindow`，按 `type` 分发到 `FileManagerApp` 或 `BrowserApp`。点桌面图标
+（`LaunchItemUseCase` 把 `role:files`/`role:browser` 拦截成 `LaunchResult.OpenVirtualApp`）、
+点已打开窗口（置顶）、点关闭按钮，分别对应 `HomeIntent.OpenFloatingApp/FocusFloatingWindow/
+CloseFloatingWindow`，逻辑都在 `HomeStore.kt` 里几行纯数据操作，不涉及任何 IO。
+
+### 文件管理器：真实的增删改查
+
+`data/files/FileManagerRepository.kt` 直接用 `java.io.File` 操作手机存储，`mvi/FileManagerStore.kt`
+管状态流转，`ui/apps/FileManagerApp.kt` 画界面——支持新建文件夹、删除（含递归删文件夹）、
+重命名、复制、移动（同分区用 `File.renameTo` 秒改名，跨分区退化成"复制后删原件"），长按进入
+多选模式。
+
+权限上最绕的一点：Android 11（API 30）起，"看任意目录"需要 `MANAGE_EXTERNAL_STORAGE`
+（所有文件访问权限）——这是特殊权限，不能用普通运行时权限弹窗申请，必须跳一个专门的系统设置页
+让用户手动开关（`MainActivity.requestFilesAccess()`）；更低版本退回传统的
+`WRITE_EXTERNAL_STORAGE` 运行时权限。没有权限时界面只显示一个引导授权的提示，不会尝试读取
+任何目录。
+
+点开一个文件交给系统"用什么打开"的选择器时，本地 `file://` 路径必须先经过
+`androidx.core.content.FileProvider` 换成 `content://` 地址（否则 Android 7.0 起会直接抛
+`FileUriExposedException` 崩溃），对应 `AndroidManifest.xml` 里的 `FileProvider` 声明和
+`res/xml/file_paths.xml`。
+
+### 浏览器：真实 WebView + 多标签页 + 书签/历史
+
+`ui/apps/BrowserApp.kt` 里，每个标签页对应一个独立的 `android.webkit.WebView` 实例（保存在
+一个 `remember` 住的 `Map<标签页id, WebView>` 里），切换标签页时只是把对应的 WebView 从一个
+共享的 `FrameLayout` 容器里换入换出——这样切回某个标签页时，滚动位置、前进/后退历史栈都还在，
+不会每次切换都重新加载。
+
+`mvi/BrowserStore.kt`（`mvi/BrowserContract.kt` 定义三件套）管的是"标签页元数据"（网址、标题、
+加载进度……），真正的网页内容不归它管（WebView 太大、也不该塞进可随意复制比较的 MVI State 里）。
+两者的分工：WebView 的 `WebViewClient`/`WebChromeClient` 回调把"网页发生了什么"通过
+`BrowserIntent.PageUpdated` 报给 Store；用户操作（地址栏回车、点后退/前进/刷新）则反过来，
+Store 判断完地址之后用 `BrowserEffect` 让 UI 层去调用真正的 `webView.loadUrl()`/`goBack()`。
+
+书签和历史记录持久化在 `data/browser/BrowserPrefs.kt`——项目里没有引入 JSON 序列化库（沙箱连不上
+Google Maven，不能新增 Gradle 依赖），用的是和 `data/prefs/LauncherPrefs.kt` 一脉相承的手写编码：
+一行一条记录，字段用 `\u0001` 分隔，多条记录用换行分隔。地址栏输入框既能当网址用也能当搜索词用，
+由 `BrowserStore.normalizeInput()` 判断：已有 `http(s)://` 前缀直接用；形如 `example.com` 的
+补一个 `https://`；其它一律当成关键词交给必应搜索。
+
+### 不会影响什么
+
+这一整块都是纯增量——桌面网格、Dock、状态栏、控制中心、文件夹卡片、Shizuku 自由窗口的外观和
+交互都没有改动；`FloatingAppType`/`FloatingWindowEntry`/`FloatingWindow` 这套命名也刻意避开了
+`WindowMode`/`WindowRect`/`AppWindow`（Shizuku 那套既有类型），两套机制在代码里不会互相串线。
+
 ## 构建
 
 ```bash
@@ -379,11 +457,19 @@ python3 tools/convert_web_to_android.py ../ios.25pan.com.zip
 **平板横屏自适应网格**（`GridSpec`，手机 4×6、平板最多 12×8，旋转实时重算）、
 **真实系统壁纸**（动态壁纸透明穿透 / 静态壁纸快照模糊 / 预设 / 自定义图片 / 自定义视频，见上面「壁纸」一节）、
 **视频壁纸**（Media3 ExoPlayer + TextureView，循环静音播放，仍可被毛玻璃模糊，见「视频壁纸」一节）、
-**自由窗口**（Shizuku + `am start --windowingMode 5`，见上面「自由窗口」一节，失败自动降级全屏）。
+**自由窗口**（Shizuku + `am start --windowingMode 5`，见上面「自由窗口」一节，失败自动降级全屏）、
+**内置文件管理器**（真实读写手机存储：新建/删除/重命名/复制/移动，见「内置小程序」一节）、
+**内置浏览器**（真实 WebView，多标签页 + 书签 + 历史记录，同上一节）、
+**纯 Compose 悬浮窗口**（文件管理器/浏览器专用，标题栏拖拽移动 + 四边四角自由缩放 +
+一键最大化还原，和 Shizuku 自由窗口是两套独立机制，互不依赖）。
 
 未实现（有意留白）：图标拖拽排序（当前是删除/添加，位置由 `LayoutEngine` 自动打包）、
 自由旋转（`rotation` 字段已在表里，UI 未开放）、自由窗口的拖拽/缩放手势
 （这部分系统自己画、自己处理，启动器不用管）、备份还原。
+
+悬浮窗口的"最小化"采用的是"卷起来只剩标题栏"的方案（标题栏右侧的朝下箭头点一下收起，
+朝上箭头点一下展开），不是另开一个类似 `WindowShelf.kt` 的收纳条 UI——内容区域（WebView、
+文件列表）在收起期间依然留在组合树里，状态不会丢，和直接关闭窗口有本质区别。
 
 ## 崩溃排查
 
