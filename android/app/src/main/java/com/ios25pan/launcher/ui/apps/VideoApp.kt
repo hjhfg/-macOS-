@@ -130,7 +130,14 @@ fun VideoApp(onRequestAccess: () -> Unit, store: VideoStore = hiltViewModel()) {
                         CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = OnGlass)
 
                     visible.isEmpty() -> Text(
-                        text = if (state.searchQuery.isBlank()) "没有找到本地视频" else "没有匹配的视频",
+                        // 区分"设备上压根没有视频"和"筛选/搜索把当前这份列表过滤空了"——
+                        // 后两种情况下设备上其实是有视频的，笼统地说"没有找到本地视频"会误导用户
+                        // 以为权限或扫描出了问题，去反复点刷新。
+                        text = when {
+                            state.videos.isEmpty() -> "没有找到本地视频"
+                            state.searchQuery.isNotBlank() -> "没有匹配的视频"
+                            else -> "这个相册里没有视频"
+                        },
                         color = OnGlass.copy(alpha = 0.6f),
                         modifier = Modifier.align(Alignment.Center),
                     )
@@ -406,6 +413,12 @@ private fun VideoPlayerScreen(entry: VideoEntry, onBack: () -> Unit) {
                     useController = true
                 }
             },
+            // update：factory 只在这个 View 第一次创建时跑一次——万一这个 Composable 以后被改成
+            // "播完自动连播下一条"之类不经过 StopPlayback 就直接换 entry 的写法，player 会随着
+            // remember(entry.id) 换成新实例，这里必须跟着把新实例重新绑定给同一个 PlayerView，
+            // 否则画面会停在旧播放器上，看起来像"点了下一个没反应"。目前的交互流程里
+            // （永远先返回网格再点开新视频）走不到这个分支，但补上更安全。
+            update = { view -> if (view.player !== player) view.player = player },
             onRelease = { it.player = null },
         )
     }
