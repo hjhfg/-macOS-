@@ -38,6 +38,14 @@ sealed interface WallpaperRender {
 
     /** 内置预设（打包进 APK 的 drawable）。 */
     data class Preset(@DrawableRes val resId: Int) : WallpaperRender
+
+    /**
+     * 用户选的视频壁纸，循环静音播放。
+     *
+     * [path] 是私有目录里的文件路径（[WallpaperRepository.setVideo] 复制过去的那份），
+     * 不是原始 content:// Uri —— 原因和图片一样：对方随时可能撤回授权，复制一份保证壁纸不丢。
+     */
+    data class Video(val path: String) : WallpaperRender
 }
 
 /**
@@ -99,12 +107,27 @@ class WallpaperRepository @Inject constructor(
         }.onFailure { Log.w(TAG, "保存自定义壁纸失败", it) }.getOrDefault(false)
     }
 
+    /** 和 [setCustom] 同一套理由，复制一份用户选的视频进私有目录，壁纸模式切到 [WallpaperMode.VIDEO]。 */
+    suspend fun setVideo(uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val dest = File(context.filesDir, CUSTOM_WALLPAPER_VIDEO_FILE)
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                dest.outputStream().use { output -> input.copyTo(output) }
+            } ?: return@withContext false
+            prefs.setWallpaper(WallpaperMode.VIDEO, uri = dest.absolutePath)
+            true
+        }.onFailure { Log.w(TAG, "保存视频壁纸失败", it) }.getOrDefault(false)
+    }
+
     private suspend fun resolve(mode: WallpaperMode, uri: String?, preset: String?): WallpaperRender =
         when (mode) {
             WallpaperMode.LIVE -> WallpaperRender.Transparent
             WallpaperMode.CUSTOM -> uri?.let { loadFile(it) } ?: WallpaperRender.Transparent
             WallpaperMode.PRESET -> presetResId(preset)?.let { WallpaperRender.Preset(it) } ?: WallpaperRender.Transparent
             WallpaperMode.SYSTEM -> resolveSystem()
+            // 不用像图片那样读文件探内容——文件在不在、能不能解码留给播放器自己报错，
+            // UI 侧（Wallpaper 组件）兜底：播放失败就当 Transparent 处理。
+            WallpaperMode.VIDEO -> uri?.let { WallpaperRender.Video(it) } ?: WallpaperRender.Transparent
         }
 
     private suspend fun resolveSystem(): WallpaperRender {
@@ -139,5 +162,6 @@ class WallpaperRepository @Inject constructor(
     private companion object {
         const val TAG = "WallpaperRepository"
         const val CUSTOM_WALLPAPER_FILE = "custom_wallpaper.jpg"
+        const val CUSTOM_WALLPAPER_VIDEO_FILE = "custom_wallpaper_video.mp4"
     }
 }

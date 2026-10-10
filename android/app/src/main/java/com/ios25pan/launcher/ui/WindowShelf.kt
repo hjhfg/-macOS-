@@ -41,7 +41,6 @@ private val CHIP_SHAPE = RoundedCornerShape(18.dp)
 fun WindowShelf(
     windows: List<AppWindow>,
     hazeState: HazeState,
-    glassAlpha: Float,
     onFocus: (String) -> Unit,
     onClose: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -62,7 +61,7 @@ fun WindowShelf(
                 Row(
                     modifier = Modifier
                         .animateContentSize()
-                        .launcherGlass(hazeState, CHIP_SHAPE, dockGlass(), alpha = glassAlpha)
+                        .launcherGlass(hazeState, CHIP_SHAPE, dockGlass())
                         .clickable { onFocus(w.component) },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

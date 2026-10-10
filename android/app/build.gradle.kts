@@ -80,6 +80,10 @@ dependencies {
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
 
+    // 视频壁纸：ExoPlayer 解码播放，media3-ui 只用来拿 PlayerView（配合 texture_view 让 Haze 能模糊）
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.ui)
+
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 }

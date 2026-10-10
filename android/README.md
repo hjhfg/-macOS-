@@ -1,4 +1,4 @@
-# macOS 桌面（Android 启动器）
+# iOS 桌面（Android 启动器）
 
 把仓库根目录 `ios.25pan.com.zip`（TabOS 的 Web 前端静态导出）转成了一个**真正的 Android 桌面启动器**：
 Kotlin + Jetpack Compose + Material 3 + MVI + Hilt + Room/DataStore。
@@ -6,78 +6,10 @@ Kotlin + Jetpack Compose + Material 3 + MVI + Hilt + Room/DataStore。
 启动器只要在 `AndroidManifest.xml` 里声明 `android.intent.category.HOME`，系统就会把它列进
 "默认主屏幕"的选择列表里 —— **不需要系统签名，不需要 root**，用户在设置里选一次即可。
 
-## 信息架构：从"iOS 主屏"改成"macOS 桌面"
-
-最早几轮是把网页素材（一套 iOS 主屏风格的 Web 原型）近乎 1:1 翻译过来：状态栏 + 铺满整屏、
-可左右翻页的 App 网格 + 底部只放几个常用图标的 Dock。这在信息架构上**就是 iOS 主屏**，
-不是 macOS 桌面——两者看起来都有"Dock"，但 iOS 的"桌面"等于"全部应用"，macOS 的桌面
-和"全部应用"（Launchpad）是两个不同的东西。
-
-本轮按 macOS 27（Golden Gate）的样子重新分层：
-
-- **Desktop（默认态，`ui/HomeScreen.kt`）**：壁纸 + 顶部菜单栏（`ui/MenuBar.kt`）+ 一片干净的
-  桌面区域 + 正在运行的自由窗口条（`ui/WindowShelf.kt`）+ Dock（`ui/Dock.kt`）。
-- **Launchpad（叠加态，`ui/Launchpad.kt`）**：点 Dock 第一个图标（九宫格图标）才会盖上来的
-  全屏磨砂面板，装的是"全部应用"那套分页网格 / 文件夹 / 长按编辑——这部分 UI 和交互逻辑
-  和上一轮完全一样（`DesktopGrid` / `FolderOverlay` / `WidgetPicker` 都没动），只是换了个容器：
-  从"桌面本身"变成"桌面之上可以收起的一张玻璃面板"。
-
-**已知取舍**：v1 没有做"可拖拽摆放的桌面图标"（真实 macOS 桌面可以把文件/文件夹拖到桌面任意位置）。
-这是刻意的范围控制——拖拽定位需要一套新的自由坐标存储和手势系统，而不是复用现有的 Room
-`row/col` 网格模型；桌面目前就是纯壁纸 + 菜单栏 + Dock，和刚装完系统、什么都没放的 macOS 桌面一样干净。
-之后如果要做，自然的落点是在 `DesktopItem` 上加 `x/y`（绝对坐标，单位 dp）字段，
-与现有的 `row/col`（Launchpad 网格用）并存，`zone` 再加一个 `DESKTOP` 分支。
-
-### Dock 的变化
-
-- 第一个图标固定是 **Launchpad**（`Icons.Default.Apps`，和真实 Launchpad 的"九宫格彩色图标"
-  语义一致），点击派发 `HomeIntent.SetLaunchpad(true)`，不是 `DesktopItem`、不存库。
-- 正在以自由窗口运行的 App，图标下面会点一个 4dp 的小圆点——对应 macOS 27 Golden Gate
-  里"后台运行的应用会在 Dock 上留下运行指示器"那个细节。数据来自
-  `HomeState.openWindows`（见 `data/window/WindowRepository.kt`），纯展示，不影响点击行为：
-  FREEFORM 模式下再次点击已运行的图标，`WindowRepository.open()` 本来就会识别到"已经开着"
-  直接把窗口带到前台，不会重复开一个新的。
-
-### 菜单栏为什么长这样
-
-真实 macOS 菜单栏左侧是当前前台 App 自己的菜单（文件/编辑/显示……）。Android 的第三方启动器
-拿不到别的 App 内部的菜单结构，这不是权限问题，是别的 App 根本不会把这个暴露出来——所以
-`ui/MenuBar.kt` 刻意**不**假装能画出别人的菜单，左侧只有我们自己的身份图标，右侧是时间和
-控制中心入口。这是能诚实落地的子集，不是偷懒省掉的部分。
-
-### Liquid Glass 透明度滑块
-
-对应 macOS 27 Golden Gate 发布会上那根"Ultra Clear ↔ Tinted Glass"的全局滑块：控制中心新增
-一个 `glass_opacity` 滑杆（`LauncherPrefs.glassOpacity`，DataStore 持久化，范围 `0.15f..1f`），
-贯穿到 `MenuBar` / `Dock` / `Launchpad` / `ControlCenter` / `FolderOverlay` / `WidgetPicker` /
-`WindowShelf` 的 `launcherGlass(..., alpha = glassAlpha)`。它和原有的"毛玻璃模糊"开关是两件事：
-模糊开关控制要不要跑 `RenderEffect` 模糊算法（关掉退化成纯半透明材质），透明度滑块只调
-`alpha`，模糊关掉之后这根滑块依然有效。
-
-### 一个和这次重构一起修的真 Bug：翻页/滑动时整屏重影
-
-这不是毛玻璃的问题，是 `MainActivity.onCreate()` 里一段看似无害的代码：
-
-```kotlin
-// 改之前
-lifecycleScope.launch {
-    store.state.collect { s ->
-        requestedOrientation = if (s.forceLandscape) ... else ...
-    }
-}
-```
-
-这里订阅了**整个** `HomeStore.state`，而 state 在每次用户操作后都会重新 emit——包括每划一次
-桌面（`PageChanged` 会产出新的 `currentPage`）。于是每滑一下屏幕就会把 `requestedOrientation`
-重新设一遍，哪怕值根本没变；系统收到这个请求会重新走一遍窗口布局流程，正好和
-`HorizontalPager` 自己的滑动动画抢同一帧，表现出来就是状态栏文字、图标整页重叠/重影，
-且"怎么滑都复现"。
-
-修法：只订阅 `forceLandscape` 这一个字段并加 `distinctUntilChanged()`，值真正变化时才设置一次，
-且设置前先判断是否已经是目标值。同时给 `LauncherPrefs` 里所有从同一个 DataStore 派生出来的
-Flow 都补上了 `distinctUntilChanged()`——DataStore 的底层行为是"任何一个 key 写入，整个
-`data` Flow 都会重新 emit"，不去重的话，换个壁纸都可能把强制横屏之类的下游状态"重新触发"一遍，
-这是这一类 bug 的共性根源，不止这一处。
+> **关于信息架构的一次反复**：中途试过把这个项目往"macOS 27 Golden Gate 桌面"的方向改
+> （顶部菜单栏取代状态栏、桌面和"全部应用"分层、Dock 只放常用图标），实现之后做了 H5 demo
+> 对比，确认效果不如直接忠于原网页，已经整体 revert 回这版——UI 就是对 `ios.25pan.com.zip`
+> 的忠实 1:1 翻译，不是另起炉灶的 macOS 风格。下面的所有章节描述的都是这版「忠于原网页」的实现。
 
 ## 从网页到 Android 的映射
 
@@ -317,12 +249,36 @@ Dock 的 `zIndex` 属于布局阶段、没法延迟读，所以用一个量化�
 - **系统壁纸**：按上面的逻辑自动判定，顺带触发一次权限申请（同意了就能被模糊）。
 - **选择图片**：Android 自带的 Photo Picker（`ActivityResultContracts.PickVisualMedia`），
   不需要任何权限声明；选中的图复制进应用私有目录，可被模糊。
+- **选择视频**：同一个 Photo Picker，筛子换成 `VideoOnly`，同样不需要权限声明；
+  选中的视频复制进私有目录循环静音播放，见下面「视频壁纸」一节。
 - **更换系统壁纸…**：直接拉起系统自己的壁纸选择器（`Intent.ACTION_SET_WALLPAPER`），
   在那边选好（含系统自带的动态壁纸）之后回到启动器会自动重新判定。
 - 另外还有 3 张内置预设缩略图（转换脚本从网页端导出的），点一下直接切换，同样可被模糊。
 
-壁纸跟随翻页做视差位移（`HomeScreen.kt` 的 `PARALLAX_SHIFT_DP`），三种渲染模式（穿透 / 位图 / 预设）
-共用同一段 `graphicsLayer` 逻辑。
+壁纸跟随翻页做视差位移（`HomeScreen.kt` 的 `PARALLAX_SHIFT_DP`），四种渲染模式
+（穿透 / 位图 / 预设 / 视频）共用同一段 `graphicsLayer` 逻辑。
+
+### 视频壁纸
+
+`WallpaperMode.VIDEO`：用户从 Photo Picker 选一段视频，复制进私有目录
+（`custom_wallpaper_video.mp4`，和自定义图片同一套"复制一份、不依赖对方授权"的理由），
+用 Media3 ExoPlayer 循环、静音播放（`volume = 0f`、`repeatMode = REPEAT_MODE_ONE`）。
+
+有一个容易踩的坑单独说一下：**播放面必须是 `TextureView`，不能是默认的 `SurfaceView`**。
+`SurfaceView` 画在独立的硬件图层上，由系统合成器单独叠加显示，不经过我们这棵 View/Compose 树
+自己的绘制流程——Haze（以及任何基于 `RenderEffect`/`RenderNode` 快照的模糊方案）看到的只是
+一个"空洞"，挡在它前面的毛玻璃面板会直接看穿到桌面图标，模糊效果形同虚设。`TextureView`
+则是把每一帧解码结果贴成一张纹理，走的是普通 View 的绘制管线，和画一张 `Bitmap` 没有本质区别，
+能被正常截帧、模糊，代价是比 `SurfaceView` 多一次 GPU 拷贝——这个量级的画面（桌面壁纸，不是
+4K 播放器）可以接受。
+
+`PlayerView` 的 surface 类型只能在 XML inflate 的时候通过 `app:surface_type="texture_view"`
+定下来，没有运行时 setter，所以不是直接 `PlayerView(context)`，而是 inflate 了一个专门的
+`res/layout/video_wallpaper_player.xml`（`ui/HomeScreen.kt` 的 `VideoWallpaper` 组件）。
+
+生命周期上跟 `LocalLifecycleOwner` 挂钩：退到后台（`ON_STOP`）就 `pause()`，回到前台
+（`ON_START`）再 `play()`——视频解码一直跑是实打实的电量和发热成本，用户已经看不到桌面
+就没有理由继续解码；组件离开组合树时 `release()` 播放器，避免泄漏。
 
 ## 自由窗口（Shizuku）
 
@@ -407,16 +363,13 @@ python3 tools/convert_web_to_android.py ../ios.25pan.com.zip
 控制中心（亮度/音量/网络面板）、编辑态（长按进入，角标移除）、包安装卸载实时刷新、
 **Haze 毛玻璃**（Dock / 文件夹 / 控制中心 / 小组件选择器，Apple 官方材质）、
 **平板横屏自适应网格**（`GridSpec`，手机 4×6、平板最多 12×8，旋转实时重算）、
-**真实系统壁纸**（动态壁纸透明穿透 / 静态壁纸快照模糊 / 预设 / 自定义图片，见上面「壁纸」一节）、
-**自由窗口**（Shizuku + `am start --windowingMode 5`，见上面「自由窗口」一节，失败自动降级全屏）、
-**macOS 风格的 Desktop/Launchpad 分层**（顶部菜单栏、Dock 内置 Launchpad 入口 + 运行指示点、
-Launchpad 作为可收起的全屏面板而不是桌面本身，见上面「从 iOS 主屏到 macOS 桌面」一节）、
-**Liquid Glass 全局透明度滑块**（控制中心可调，持久化）。
+**真实系统壁纸**（动态壁纸透明穿透 / 静态壁纸快照模糊 / 预设 / 自定义图片 / 自定义视频，见上面「壁纸」一节）、
+**视频壁纸**（Media3 ExoPlayer + TextureView，循环静音播放，仍可被毛玻璃模糊，见「视频壁纸」一节）、
+**自由窗口**（Shizuku + `am start --windowingMode 5`，见上面「自由窗口」一节，失败自动降级全屏）。
 
 未实现（有意留白）：图标拖拽排序（当前是删除/添加，位置由 `LayoutEngine` 自动打包）、
 自由旋转（`rotation` 字段已在表里，UI 未开放）、自由窗口的拖拽/缩放手势
-（这部分系统自己画、自己处理，启动器不用管）、备份还原、
-**可拖拽摆放的桌面图标**（v1 的 Desktop 只有壁纸 + 菜单栏 + Dock，没有桌面图标，见上面的「已知取舍」）。
+（这部分系统自己画、自己处理，启动器不用管）、备份还原。
 
 ## 崩溃排查
 
@@ -471,6 +424,7 @@ CI 组合上（而不是各自取最新版，那才是风险所在）。所有�
 | Hilt | 2.59 | 同上 |
 | Lifecycle / Activity / core-ktx / coroutines | 2.10.0 / 1.12.2 / 1.17.0 / 1.10.1 | 同上 + Haze 1.7.3 |
 | Shizuku api / provider | 13.1.5 | Shizuku-API 最新稳定版（UserService 机制，非已废弃的 newProcess） |
+| Media3 exoplayer / ui | 1.5.1 | 视频壁纸播放，当前稳定版 |
 
 Compose 各构件是**显式锁版本、不用 BOM** 的：BOM 会把版本拉到它自己的组合上，
 反而和 Haze 的编译基线错开。

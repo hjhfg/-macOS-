@@ -102,7 +102,6 @@ class HomeStore @Inject constructor(
         viewModelScope.launch { windows.shellState.collect { s -> _state.update { it.copy(shellState = s) } } }
         viewModelScope.launch { prefs.windowMode.collect { m -> _state.update { it.copy(windowMode = m) } } }
         viewModelScope.launch { prefs.forceLandscape.collect { v -> _state.update { it.copy(forceLandscape = v) } } }
-        viewModelScope.launch { prefs.glassOpacity.collect { v -> _state.update { it.copy(glassOpacity = v) } } }
         viewModelScope.launch {
             wallpaper.render
                 .catch { Log.e(TAG, "加载壁纸失败", it) }
@@ -127,9 +126,6 @@ class HomeStore @Inject constructor(
         HomeIntent.ExitEdit -> s.copy(editing = false)
         is HomeIntent.OpenFolder -> s.copy(openFolderId = i.folderId)
         is HomeIntent.SetControlCenter -> s.copy(controlCenterOpen = i.open)
-        // 关掉 Launchpad 时顺带退出编辑态——和 macOS 一样，编辑是 Launchpad 内部的事,
-        // 收起面板后再打开不应该还停留在"抖动删除"状态。
-        is HomeIntent.SetLaunchpad -> s.copy(launchpadOpen = i.open, editing = if (i.open) s.editing else false)
         is HomeIntent.SetWidgetPicker -> s.copy(
             widgetPickerOpen = i.open,
             providers = if (i.open) s.providers else emptyList(),
@@ -140,7 +136,8 @@ class HomeStore @Inject constructor(
         is HomeIntent.SetWindowMode, is HomeIntent.CloseWindow, is HomeIntent.FocusWindow,
         is HomeIntent.SetWallpaperMode,
         is HomeIntent.SetWallpaperPreset, is HomeIntent.PickedCustomWallpaper,
-        HomeIntent.RefreshWallpaper, is HomeIntent.SetForceLandscape, is HomeIntent.SetGlassOpacity -> s
+        is HomeIntent.PickedVideoWallpaper,
+        HomeIntent.RefreshWallpaper, is HomeIntent.SetForceLandscape -> s
     }
 
     /** 副作用：IO、启动 Activity、系统服务调用。 */
@@ -179,9 +176,12 @@ class HomeStore @Inject constructor(
                 val ok = wallpaper.setCustom(android.net.Uri.parse(i.uri))
                 if (!ok) _effects.send(HomeEffect.Toast(R.string.wallpaper_custom_failed))
             }
+            is HomeIntent.PickedVideoWallpaper -> viewModelScope.launch {
+                val ok = wallpaper.setVideo(android.net.Uri.parse(i.uri))
+                if (!ok) _effects.send(HomeEffect.Toast(R.string.wallpaper_custom_failed))
+            }
             HomeIntent.RefreshWallpaper -> wallpaper.notifyChanged()
             is HomeIntent.SetForceLandscape -> viewModelScope.launch { prefs.setForceLandscape(i.value) }
-            is HomeIntent.SetGlassOpacity -> viewModelScope.launch { prefs.setGlassOpacity(i.value) }
 
             else -> Unit
         }

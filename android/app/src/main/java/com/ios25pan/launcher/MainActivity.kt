@@ -62,6 +62,13 @@ class MainActivity : ComponentActivity() {
         if (uri != null) store.dispatch(HomeIntent.PickedCustomWallpaper(uri.toString()))
     }
 
+    /** 同一个 Photo Picker，筛视频——视频壁纸同样不需要任何权限声明。 */
+    private val pickVideoWallpaperLauncher = registerForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) store.dispatch(HomeIntent.PickedVideoWallpaper(uri.toString()))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -112,6 +119,11 @@ class MainActivity : ComponentActivity() {
                     onPickCustomWallpaper = {
                         pickWallpaperLauncher.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    },
+                    onPickVideoWallpaper = {
+                        pickVideoWallpaperLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
                         )
                     },
                 )

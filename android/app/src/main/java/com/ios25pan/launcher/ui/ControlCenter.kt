@@ -81,8 +81,6 @@ import kotlinx.coroutines.launch
 fun ControlCenter(
     visible: Boolean,
     hazeState: HazeState,
-    glassAlpha: Float,
-    onGlassAlphaChange: (Float) -> Unit,
     blurDisabled: Boolean,
     onBlurDisabledChange: (Boolean) -> Unit,
     windowMode: WindowMode,
@@ -95,6 +93,7 @@ fun ControlCenter(
     onWallpaperPresetChange: (String) -> Unit,
     onRequestWallpaperPermission: () -> Unit,
     onPickCustomWallpaper: () -> Unit,
+    onPickVideoWallpaper: () -> Unit,
     forceLandscape: Boolean,
     onForceLandscapeChange: (Boolean) -> Unit,
     onClose: () -> Unit,
@@ -140,9 +139,8 @@ fun ControlCenter(
                     .fillMaxWidth()
                     .launcherGlass(
                         hazeState,
-                        RoundedCornerShape(bottomStart = 22.dp, bottomEnd = 22.dp),
+                        RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
                         panelGlass(),
-                        alpha = glassAlpha,
                     ),
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -193,10 +191,6 @@ fun ControlCenter(
 
                     Spacer(Modifier.height(12.dp))
                     SwitchRow(stringResource(R.string.glass_blur), !blurDisabled) { onBlurDisabledChange(!it) }
-                    // macOS 27 Golden Gate 的那根"Ultra Clear ↔ Tinted Glass"滑块：
-                    // 只影响透明度（alpha），和上面的"毛玻璃模糊"开关（控制是否跑模糊算法）是两件事，
-                    // 模糊关掉之后这根滑块依然有效——退化成"半透明但不模糊"的材质时，透明度还是可调的。
-                    SliderRow(stringResource(R.string.glass_opacity), glassAlpha, onGlassAlphaChange)
                     SwitchRow(stringResource(R.string.force_landscape), forceLandscape, onForceLandscapeChange)
 
                     Spacer(Modifier.height(4.dp))
@@ -211,6 +205,7 @@ fun ControlCenter(
                         onPresetChange = onWallpaperPresetChange,
                         onRequestPermission = onRequestWallpaperPermission,
                         onPickCustom = onPickCustomWallpaper,
+                        onPickVideo = onPickVideoWallpaper,
                     )
 
                     Spacer(Modifier.height(8.dp))
@@ -340,6 +335,7 @@ private fun WallpaperRow(
     onPresetChange: (String) -> Unit,
     onRequestPermission: () -> Unit,
     onPickCustom: () -> Unit,
+    onPickVideo: () -> Unit,
 ) {
     val context = LocalContext.current
     Column {
@@ -352,6 +348,13 @@ private fun WallpaperRow(
             }
             TextButton(onClick = onPickCustom) {
                 Text(stringResource(R.string.wallpaper_custom), style = MaterialTheme.typography.bodySmall, color = OnGlass)
+            }
+            TextButton(onClick = onPickVideo) {
+                Text(
+                    stringResource(R.string.wallpaper_video),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (wallpaper is WallpaperRender.Video) MaterialTheme.colorScheme.primary else OnGlass,
+                )
             }
             TextButton(onClick = {
                 runCatching { context.startActivity(Intent(Intent.ACTION_SET_WALLPAPER)) }

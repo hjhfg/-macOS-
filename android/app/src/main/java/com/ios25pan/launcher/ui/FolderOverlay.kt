@@ -39,7 +39,6 @@ private const val FOLDER_COLUMNS = 3
 fun FolderOverlay(
     visible: Boolean,
     hazeState: HazeState,
-    glassAlpha: Float,
     items: List<DesktopItem>,
     title: String,
     store: HomeStore,
@@ -66,7 +65,7 @@ fun FolderOverlay(
             Box(
                 modifier = Modifier
                     .fillMaxWidth(0.82f)
-                    .launcherGlass(hazeState, RoundedCornerShape(22.dp), cardGlass(), alpha = glassAlpha),
+                    .launcherGlass(hazeState, RoundedCornerShape(28.dp), cardGlass()),
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(

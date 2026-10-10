@@ -5,7 +5,6 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -37,7 +36,6 @@ class LauncherPrefs @Inject constructor(@ApplicationContext private val context:
     private val wallpaperUriKey = stringPreferencesKey("wallpaper_uri")
     private val wallpaperPresetKey = stringPreferencesKey("wallpaper_preset")
     private val forceLandscapeKey = booleanPreferencesKey("force_landscape")
-    private val glassOpacityKey = floatPreferencesKey("glass_opacity")
     private val gridColsKey = intPreferencesKey("grid_cols")
     private val gridRowsKey = intPreferencesKey("grid_rows")
     private val windowModeKey = stringPreferencesKey("window_mode")
@@ -74,17 +72,6 @@ class LauncherPrefs @Inject constructor(@ApplicationContext private val context:
 
     suspend fun setForceLandscape(value: Boolean) {
         context.launcherDataStore.edit { it[forceLandscapeKey] = value }
-    }
-
-    /**
-     * Liquid Glass 全局透明度（macOS 27 Golden Gate 里"Ultra Clear ↔ Tinted Glass"那根滑块）。
-     * 1 = 当前的材质预设原样不透明；越小玻璃面板越接近完全看穿壁纸。
-     */
-    val glassOpacity: Flow<Float> =
-        context.launcherDataStore.data.map { it[glassOpacityKey] ?: 1f }.distinctUntilChanged()
-
-    suspend fun setGlassOpacity(value: Float) {
-        context.launcherDataStore.edit { it[glassOpacityKey] = value.coerceIn(0.15f, 1f) }
     }
 
     /** 0 表示跟随屏幕尺寸自动算（见 GridSpec）。 */
