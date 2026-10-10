@@ -10,15 +10,20 @@ import androidx.compose.ui.unit.dp
  * 一排四个巨大的图标。这里按可用 dp 推算，并且**只在横向上加列**：
  * 平板的高度增长有限，宽度才是多出来的那部分。
  *
- * 目标格子大小约 92dp × 98dp（图标 + 标签 + 留白），上下预留 [RESERVED_HEIGHT_DP]
- * 给状态栏 / 任务栏 / Dock。结果落在 4..18 列、3..11 行之间——
- * 手机竖屏算出来还是 4×6 左右，16 寸笔记本这种大横屏能到十几列。
+ * 下面这几个数字不是拍脑袋猜的——是直接从 `ios.25pan.com.zip` 里 `assets/DeskRoot-*.js`
+ * 反编译出来的真实默认值（网页端桌面布局引擎里字面量就是
+ * `{cols:6,rows:8,cellWidth:88,cellHeight:104,gapX:14,gapY:18,paddingInline:28,paddingBlock:72}`），
+ * 单位是 CSS px；CSS px 本来就是"和屏幕密度无关的逻辑像素"，和 Android 的 dp 是同一个概念，
+ * 可以直接 1:1 当 dp 用，不需要换算。网页端这组"6×8"只是一个未经视口自适应前的出厂默认值，
+ * 真正显示的列数由网页自己的"桌面图标自动填满"逻辑按容器宽度重新算——这正是我们下面
+ * [auto] 函数在做的事，只是算法这边是我们自己按同一套格子尺寸反推的，不是抄网页的计算代码
+ * （拿不到网页那段自适应函数的完整实现，只能照着"格子多大、缝多宽、边距多少"这几个
+ * 写死的数字自己填算法）。
  *
- * 这两个格子尺寸（以及下面的列/行上限）原来是 116×118 / 12×8，是按"手机/平板触屏，
- * 图标要够大方便手指点"设计的，在真正宽的大屏幕上会显得异常空旷——同一页能放的图标数
- * 远少于网页版（网页端是鼠标操作，图标可以明显更小更密）。缩小格子、放宽列/行上限之后，
- * 同一份数据能在一页里放下更多图标，减少"内容被迫拆到好几页、第一页看起来空荡荡"的情况，
- * 也更贴近网页端那种"大屏桌面密密麻麻摆满图标"的视觉密度。
+ * 上下预留 [RESERVED_HEIGHT_DP] 给状态栏 / 翻页圆点 / Dock + 搜索栏；[GAP_X_DP]/[GAP_Y_DP]
+ * 是图标格子之间的缝隙，[PADDING_INLINE_DP] 是整页左右留白——这三个和 [CELL_WIDTH_DP]/
+ * [CELL_HEIGHT_DP] 一起决定了"这么宽的屏幕到底能横着摆几列"。16 寸笔记本这种大横屏，
+ * 按这套公式能摆到十几列，比之前随手定的 92×98dp 更贴近网页端真实的密度。
  */
 object GridSpec {
 
@@ -28,19 +33,34 @@ object GridSpec {
         }
     }
 
-    /** 状态栏 + 页面指示 + Dock + 任务栏大约占掉的垂直空间。 */
-    private const val RESERVED_HEIGHT_DP = 108
+    /** 状态栏 + 页面指示 + Dock + 搜索栏大约占掉的垂直空间。 */
+    private const val RESERVED_HEIGHT_DP = 130
 
-    private const val CELL_WIDTH_DP = 92
-    private const val CELL_HEIGHT_DP = 98
+    // 以下 5 个常量原样照抄自网页端 DeskRoot 的默认网格配置（见上面类注释），
+    // 单位 CSS px == dp，不需要换算。
+    private const val CELL_WIDTH_DP = 88
+    private const val CELL_HEIGHT_DP = 104
+    private const val GAP_X_DP = 14
+    private const val GAP_Y_DP = 18
+    private const val PADDING_INLINE_DP = 28
+
+    /** 图标格子之间的横向缝隙，供 [com.ios25pan.launcher.ui.DesktopGrid] 画格子时用。 */
+    val gapX: Dp get() = GAP_X_DP.dp
+
+    /** 图标格子之间的纵向缝隙，供 [com.ios25pan.launcher.ui.DesktopGrid] 画格子时用。 */
+    val gapY: Dp get() = GAP_Y_DP.dp
 
     /** 宽到这个 dp 以上就算"平板/展开"，图标和 Dock 都放大一档。 */
     const val EXPANDED_WIDTH_DP = 840
 
     fun auto(widthDp: Int, heightDp: Int): Grid {
-        val cols = (widthDp / CELL_WIDTH_DP).coerceIn(4, 18)
-        val usable = (heightDp - RESERVED_HEIGHT_DP).coerceAtLeast(CELL_HEIGHT_DP)
-        val rows = (usable / CELL_HEIGHT_DP).coerceIn(3, 11)
+        // 列数公式照抄网页端"格子+缝隙"的排布方式反推：
+        // 可用宽度 = 总宽 - 左右各一份 PADDING_INLINE；N 列之间有 N-1 条缝，
+        // 所以 N*(cellWidth+gapX) - gapX <= 可用宽度，解出 N 的上界。
+        val usableWidth = (widthDp - PADDING_INLINE_DP * 2).coerceAtLeast(CELL_WIDTH_DP)
+        val cols = ((usableWidth + GAP_X_DP) / (CELL_WIDTH_DP + GAP_X_DP)).coerceIn(4, 18)
+        val usableHeight = (heightDp - RESERVED_HEIGHT_DP).coerceAtLeast(CELL_HEIGHT_DP)
+        val rows = ((usableHeight + GAP_Y_DP) / (CELL_HEIGHT_DP + GAP_Y_DP)).coerceIn(3, 11)
         return Grid(cols, rows)
     }
 
@@ -53,10 +73,9 @@ object GridSpec {
         )
     }
 
-    // 格子本身缩小了（见上面 CELL_WIDTH_DP/CELL_HEIGHT_DP 的注释），图标底板也跟着
-    // 按比例缩小一点，留出和网页端类似的"图标间留白"，不然图标会紧贴到几乎没有间距。
-    /** 图标底板大小：平板上放大，否则格子一大就显得空。 */
-    fun iconPlateSize(expanded: Boolean): Dp = if (expanded) 68.dp else 50.dp
+    /** 图标底板大小：跟网页端的 baseIconSize(58px) 对齐，平板上按比例放大一档。 */
+    fun iconPlateSize(expanded: Boolean): Dp = if (expanded) 64.dp else 52.dp
 
     fun isExpanded(widthDp: Int): Boolean = widthDp >= EXPANDED_WIDTH_DP
 }
+

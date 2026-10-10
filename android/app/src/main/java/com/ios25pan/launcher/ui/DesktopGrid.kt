@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ios25pan.launcher.domain.GRID_COLS
 import com.ios25pan.launcher.domain.GRID_ROWS
+import com.ios25pan.launcher.domain.GridSpec
 import com.ios25pan.launcher.domain.Slot
 
 /**
@@ -64,16 +65,28 @@ fun DesktopGrid(
         content = { slots.forEach { item(it) } },
     ) { measurables, constraints ->
         // 第一步——测量阶段：先算出"一个格子"占多少像素。
-        // constraints.maxWidth/maxHeight 是 DesktopGrid 自己能用的总宽高（像素）。
-        val cellW = constraints.maxWidth / cols.coerceAtLeast(1)
-        val cellH = constraints.maxHeight / rows.coerceAtLeast(1)
+        // 网页端相邻格子之间是有明确缝隙的（见 GridSpec 类注释里的 gapX/gapY），不是
+        // 简单地把容器宽高除以列数/行数——那样图标会一个挨一个贴在一起，没有呼吸感。
+        // 这里先把 (cols-1) 条横向缝 / (rows-1) 条纵向缝占用的像素减掉，剩下的才是
+        // 真正用来摆 cols×rows 个格子的空间，和网页端 CSS Grid 的 gap 语义一致。
+        val gapXPx = GridSpec.gapX.toPx()
+        val gapYPx = GridSpec.gapY.toPx()
+        val cellW = ((constraints.maxWidth - gapXPx * (cols - 1)) / cols.coerceAtLeast(1))
+            .coerceAtLeast(0f)
+        val cellH = ((constraints.maxHeight - gapYPx * (rows - 1)) / rows.coerceAtLeast(1))
+            .coerceAtLeast(0f)
         // measurables：和 content 里声明的子节点一一对应的"待测量"句柄列表。
-        // 对每一个子节点，按它自己声明的 colSpan/rowSpan 算出"应该有多大"，
-        // 然后用 Constraints.fixed(w, h) 强制它就按这个尺寸测量（不允许自己决定大小）。
+        // 对每一个子节点，按它自己声明的 colSpan/rowSpan 算出"应该有多大"——注意 colSpan>1
+        // 的格子（比如 2x2 的时钟小组件）要把跨过的那几条缝也算进自己的宽高里，不然宽/高
+        // 会比视觉上应该占的面积小一圈缝隙的量。
         val placeables = measurables.mapIndexed { i, m ->
             val s = slots[i]
-            val w = (s.colSpan * cellW).coerceAtMost(constraints.maxWidth)
-            val h = (s.rowSpan * cellH).coerceAtMost(constraints.maxHeight)
+            val w = (s.colSpan * cellW + (s.colSpan - 1) * gapXPx)
+                .toInt()
+                .coerceAtMost(constraints.maxWidth)
+            val h = (s.rowSpan * cellH + (s.rowSpan - 1) * gapYPx)
+                .toInt()
+                .coerceAtMost(constraints.maxHeight)
             m.measure(Constraints.fixed(w, h)) // 返回一个"已经测量完、马上能摆放"的 Placeable
         }
         // 第二步——摆放阶段：layout(...) 声明 DesktopGrid 自己最终占多大，
@@ -81,8 +94,11 @@ fun DesktopGrid(
         layout(constraints.maxWidth, constraints.maxHeight) {
             placeables.forEachIndexed { i, p ->
                 val s = slots[i]
-                // 格子左上角坐标 = 第几行/列 × 每格的宽/高，很直白的乘法定位。
-                p.place(s.col * cellW, s.row * cellH)
+                // 格子左上角坐标 = 第几行/列 × (每格宽/高 + 一条缝的宽度)，
+                // 比之前"纯乘法"多加了缝隙的累计偏移。
+                val x = (s.col * (cellW + gapXPx)).toInt()
+                val y = (s.row * (cellH + gapYPx)).toInt()
+                p.place(x, y)
             }
         }
     }
